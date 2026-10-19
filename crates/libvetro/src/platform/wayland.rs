@@ -244,6 +244,20 @@ struct Pending {
 thread_local! {
     static SPAWNER: std::cell::RefCell<Option<calloop::futures::Scheduler<()>>> = const { std::cell::RefCell::new(None) };
     static SERVICES: std::cell::RefCell<Option<std::rc::Rc<crate::services::Services>>> = const { std::cell::RefCell::new(None) };
+    static POSTED: std::cell::RefCell<Vec<Posted>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Work for the core posted from a future.
+type Posted = Box<dyn FnOnce(&mut Ui)>;
+
+/// Runs `f` with the core at the end of this loop turn: how a future ([`spawn`]) hands its
+/// result to the UI. False outside [`run`].
+pub fn post(f: impl FnOnce(&mut Ui) + 'static) -> bool {
+    if SPAWNER.with(|c| c.borrow().is_none()) {
+        return false;
+    }
+    POSTED.with(|p| p.borrow_mut().push(Box::new(f)));
+    true
 }
 
 /// Runs a future on the UI thread's event loop (system service calls, timers); false
@@ -655,6 +669,11 @@ impl Platform {
             };
         }
         self.ui.fire_timers();
+        let posted = POSTED.with(|p| std::mem::take(&mut *p.borrow_mut()));
+        for f in posted {
+            f(&mut self.ui);
+        }
+        self.ui.flush();
         // The system fonts arrived from their loader: text is laid out again.
         if crate::text::fonts::Fonts::with(|f| f.install_system()) {
             self.ui.refresh_all();
