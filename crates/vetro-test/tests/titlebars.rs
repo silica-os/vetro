@@ -22,6 +22,21 @@ const DOTS: Tolerance = Tolerance {
     mask_text: true,
 };
 
+/// Kit defect: the renders of masters that hold the window buttons (pieces, bars, sections)
+/// still show them at the old 24 pt pitch, while their layers (and the `Titlebars/Controls`
+/// masters) are at 23 pt (docs/spec/windows.md). The buttons are compared on their own
+/// masters; elsewhere their box is masked.
+fn mask_stale_controls(scene: &mut Scene, name: &str) {
+    if name.starts_with("Titlebars/Controls/") || name.starts_with("Titlebars/Dot/") {
+        return;
+    }
+    for layer in ["Window controls", "Controls"] {
+        if let Some(r) = scene.master.rect_in_master(layer) {
+            scene.extra_mask.push(r.inflate(8.0, 0.0));
+        }
+    }
+}
+
 #[test]
 fn titlebar_masters_match_the_kit() {
     let names = KitMaster::names("Titlebars");
@@ -77,6 +92,7 @@ fn titlebar_masters_match_the_kit() {
         {
             scene.extra_mask.push(r);
         }
+        mask_stale_controls(&mut scene, name);
         // The window buttons are 16 pt: their antialiased rims weigh a lot in the mean.
         let tol = if name.starts_with("Titlebars/Dot/") || name.starts_with("Titlebars/Controls/") {
             DOTS

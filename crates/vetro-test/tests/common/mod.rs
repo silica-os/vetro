@@ -381,6 +381,13 @@ pub fn strip_of(
         if k.master.is_some() {
             set_id(ui, v, &k.name);
         }
+        // A piece keeps the width of its instance (bars exported before a piece changed).
+        if k.master
+            .as_deref()
+            .is_some_and(|m| m.starts_with("Titlebars/Piece/"))
+        {
+            let _ = ui.set(v, Prop::Width, Value::from(k.frame.width));
+        }
         ui.add_child(s, v);
     }
     Some(s)

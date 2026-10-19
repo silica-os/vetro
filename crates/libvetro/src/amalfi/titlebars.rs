@@ -22,10 +22,18 @@ use crate::text::Align;
 pub mod metrics {
     /// A window button's diameter.
     pub const DOT: f32 = 16.0;
-    /// Gap between window buttons.
-    pub const DOT_GAP: f32 = 8.0;
+    /// Gap between window buttons' cells (a 23 pt pitch, docs/spec/windows.md).
+    pub const DOT_GAP: f32 = 7.0;
     /// The three buttons' width.
-    pub const CONTROLS_WIDTH: f32 = 64.0;
+    pub const CONTROLS_WIDTH: f32 = 62.0;
+
+    /// The first window button's centre x in a bar `bar` tall (docs/spec/windows.md "Window
+    /// buttons", as Ossido's `button_centers`): 16 up to 32 pt, 26 from 52 pt, a linear blend
+    /// rounded to a whole point in between. The buttons are centred vertically.
+    pub fn first_button_x(bar: f32) -> f32 {
+        let t = ((bar - 32.0) / 20.0).clamp(0.0, 1.0);
+        (16.0 + t * 10.0).round()
+    }
     /// A toolbar piece's height.
     pub const PIECE_HEIGHT: f32 = 52.0;
     /// The glass pieces' height.
@@ -1100,6 +1108,7 @@ pub struct TitleBar;
 impl TitleBar {
     const PAD: f32 = 16.0;
     const GAP: f32 = 12.0;
+    const TRAILING: f32 = 64.0;
 }
 
 impl Widget for TitleBar {
@@ -1125,7 +1134,7 @@ impl Widget for TitleBar {
             cx.place(
                 c,
                 Rect::new(
-                    TitleBar::PAD,
+                    metrics::first_button_x(size.height) - metrics::DOT / 2.0,
                     (size.height - metrics::DOT) / 2.0,
                     controls,
                     metrics::DOT,
@@ -1134,7 +1143,8 @@ impl Widget for TitleBar {
         }
         if let Some(b) = kids.get(1).copied() {
             let left = TitleBar::PAD + controls + TitleBar::GAP;
-            let right = size.width - TitleBar::PAD - controls - TitleBar::GAP;
+            // The trailing end keeps the kit's 64 pt reservation (the block centres between).
+            let right = size.width - TitleBar::PAD - TitleBar::TRAILING - TitleBar::GAP;
             let avail = (right - left).max(0.0);
             let s = cx.measure(b, Proposal::new(None, None));
             let w = s.width.min(avail);

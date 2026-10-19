@@ -1,5 +1,8 @@
 //! Alerts (kit `Alerts`): the alert panel (icon, title, message, accessories, buttons) in its
-//! solid and glass looks, with the warning badge of the critical alerts.
+//! solid and glass looks, with the warning badge of the critical alerts. Every alert has the
+//! one binding anatomy of docs/design/amalfi/components.md "Alerts (binding)": 280 wide,
+//! centred text, buttons one per row (240 × 28), the default first and the Escape button
+//! last.
 
 use crate::amalfi::button::{PushButton, PushVariant};
 use crate::amalfi::text::{Text, TextRole};
@@ -11,9 +14,10 @@ use crate::core::tree::ViewId;
 use crate::core::ui::Ui;
 use crate::core::value::{Prop, Signal, Value};
 use crate::core::widget::{EventCx, FocusKind, LayoutCx, PaintCx, PropChange, Widget};
-use crate::geom::{Insets, Rect, Size};
+use crate::geom::{Rect, Size};
 use crate::shape::Shape;
 use crate::style::{Border, Style};
+use crate::text::Align;
 
 /// Fixed measures of the kit.
 pub mod metrics {
@@ -27,8 +31,14 @@ pub mod metrics {
     pub const BOTTOM: f32 = 20.0;
     /// Space at the sides.
     pub const SIDE: f32 = 20.0;
-    /// Gap between the parts.
+    /// Gap between the parts (icon → title, message → accessory).
     pub const GAP: f32 = 16.0;
+    /// Title → message, and between accessories.
+    pub const TEXT_GAP: f32 = 8.0;
+    /// Text or accessory → buttons.
+    pub const BUTTONS_GAP: f32 = 20.0;
+    /// A button's height.
+    pub const BUTTON_HEIGHT: f32 = 28.0;
     /// The width of text and fields.
     pub const CONTENT_WIDTH: f32 = 240.0;
     /// The app icon's size.
@@ -39,6 +49,18 @@ pub mod metrics {
     pub const BUTTON_GAP: f32 = 8.0;
     /// The narrowest button.
     pub const BUTTON_MIN_WIDTH: f32 = 72.0;
+}
+
+/// The gap above a part, from its identifier and the one above it (the binding anatomy).
+fn gap(above: Option<&str>, part: Option<&str>) -> f32 {
+    let text = |p: Option<&str>| matches!(p, Some("Title" | "Message" | "Text"));
+    let icon = |p: Option<&str>| matches!(p, Some("App icon"));
+    match (above, part) {
+        (_, Some("Buttons")) => metrics::BUTTONS_GAP,
+        (Some("Title"), Some("Message")) => metrics::TEXT_GAP,
+        (a, p) if !text(a) && !icon(a) && !text(p) => metrics::TEXT_GAP,
+        _ => metrics::GAP,
+    }
 }
 
 /// The look of the panel.
@@ -61,6 +83,8 @@ pub struct Alert {
     pub badge: bool,
     /// The button that Return activates (its index among the buttons).
     pub default_button: Option<usize>,
+    /// The parts the anatomy spaces apart: icon, title, message (children of the panel).
+    pub parts: [Option<ViewId>; 3],
 }
 
 impl Alert {
@@ -70,6 +94,23 @@ impl Alert {
             material: Material::Solid,
             badge: false,
             default_button: None,
+            parts: [None; 3],
+        }
+    }
+}
+
+impl Alert {
+    /// A child's part (its identifier).
+    fn part(&self, cx: &LayoutCx<'_>, c: ViewId) -> Option<String> {
+        let [icon, title, message] = self.parts;
+        if Some(c) == icon {
+            Some("App icon".into())
+        } else if Some(c) == title {
+            Some("Title".into())
+        } else if Some(c) == message {
+            Some("Message".into())
+        } else {
+            cx.ui.tree.get(c).and_then(|n| n.identifier.clone())
         }
     }
 }
@@ -93,11 +134,14 @@ impl Widget for Alert {
         let inner = (w - 2.0 * metrics::SIDE).max(0.0);
         let kids = cx.children();
         let mut h = metrics::TOP + metrics::BOTTOM;
+        let mut above: Option<String> = None;
         for (i, c) in kids.iter().enumerate() {
+            let part = self.part(cx, *c);
             if i > 0 {
-                h += metrics::GAP;
+                h += gap(above.as_deref(), part.as_deref());
             }
             h += cx.measure(*c, Proposal::new(Some(inner), None)).height;
+            above = part;
         }
         Size::new(w, h)
     }
@@ -105,11 +149,17 @@ impl Widget for Alert {
     fn place(&mut self, cx: &mut LayoutCx<'_>, size: Size) {
         let inner = (size.width - 2.0 * metrics::SIDE).max(0.0);
         let mut y = metrics::TOP;
-        for c in cx.children() {
+        let mut above: Option<String> = None;
+        for (i, c) in cx.children().into_iter().enumerate() {
+            let part = self.part(cx, c);
+            if i > 0 {
+                y += gap(above.as_deref(), part.as_deref());
+            }
             let s = cx.measure(c, Proposal::new(Some(inner), None));
             let w = s.width.min(inner);
             cx.place(c, Rect::new((size.width - w) / 2.0, y, w, s.height));
-            y += s.height + metrics::GAP;
+            y += s.height;
+            above = part;
         }
     }
 
@@ -255,11 +305,12 @@ pub struct AlertSpec {
     pub grouped_text: bool,
     /// Views between the text and the buttons (a suppression checkbox, a field).
     pub accessories: Vec<ViewId>,
-    /// The buttons in visual order (left to right, or top to bottom when stacked).
+    /// The buttons, top to bottom; the default one (primary or destructive) always goes
+    /// first, and the Escape one should be last.
     pub buttons: Vec<AlertButton>,
-    /// The buttons stack in a column.
+    /// Kept for the C ABI: buttons are always one per row, 240 wide (the binding anatomy).
     pub stacked: bool,
-    /// Stacked buttons as wide as the text.
+    /// Kept for the C ABI: buttons are always as wide as the text.
     pub wide_buttons: bool,
     /// The panel's look.
     pub glass: bool,
@@ -280,10 +331,11 @@ pub fn alert(ui: &mut Ui, spec: AlertSpec) -> ViewId {
     if spec.glass {
         panel.material = Material::Glass;
     }
-    panel.default_button = spec
+    let default = spec
         .buttons
         .iter()
         .position(|b| matches!(b.kind, ButtonKind::Primary | ButtonKind::Destructive));
+    panel.default_button = default;
     let a = ui.create(panel);
     if let Some(icon) = spec.icon {
         ui.add_child(a, icon);
@@ -293,6 +345,7 @@ pub fn alert(ui: &mut Ui, spec: AlertSpec) -> ViewId {
             .token(&typography::TITLE_3)
             .role(TextRole::Primary)
             .layer("Title")
+            .align(Align::Center)
             .wrapping(),
     );
     let message = spec.message.as_deref().map(|m| {
@@ -301,23 +354,18 @@ pub fn alert(ui: &mut Ui, spec: AlertSpec) -> ViewId {
                 .token(&typography::CALLOUT)
                 .role(spec.message_role.unwrap_or(TextRole::Secondary))
                 .layer("Message")
+                .align(Align::Center)
                 .wrapping(),
         )
     });
     let text_width = spec.text_width.unwrap_or(metrics::CONTENT_WIDTH);
     let width = Value::from(text_width);
     if spec.grouped_text {
-        let g = ui.create(Stack::column(8.0).aligned(Alignment::LEADING));
+        let g = ui.create(Stack::column(metrics::TEXT_GAP).aligned(Alignment::CENTER));
         let _ = ui.set(g, Prop::Width, width.clone());
-        let _ = ui.set(
-            g,
-            Prop::Padding,
-            Value::Insets(Insets {
-                bottom: 4.0,
-                ..Insets::ZERO
-            }),
-        );
         let _ = ui.set(g, Prop::Identifier, Value::from("Text"));
+        let icon = spec.icon;
+        ui.with_widget::<Alert, _>(a, |w| w.parts = [icon, None, None]);
         let _ = ui.set(title, Prop::Width, width.clone());
         ui.add_child(g, title);
         if let Some(m) = message {
@@ -332,18 +380,25 @@ pub fn alert(ui: &mut Ui, spec: AlertSpec) -> ViewId {
             let _ = ui.set(m, Prop::Width, width.clone());
             ui.add_child(a, m);
         }
+        let icon = spec.icon;
+        ui.with_widget::<Alert, _>(a, |w| w.parts = [icon, Some(title), message]);
     }
     for v in spec.accessories {
         ui.add_child(a, v);
     }
     if !spec.buttons.is_empty() {
-        let row = if spec.stacked {
-            ui.create(Stack::column(metrics::BUTTON_GAP))
-        } else {
-            ui.create(Stack::row(metrics::BUTTON_GAP))
-        };
+        // One per row, the default first; each keeps its index for the caller.
+        let row = ui.create(Stack::column(metrics::BUTTON_GAP));
         let _ = ui.set(row, Prop::Identifier, Value::from("Buttons"));
-        for (i, b) in spec.buttons.iter().enumerate() {
+        let mut order: Vec<usize> = (0..spec.buttons.len()).collect();
+        if let Some(d) = default {
+            order.retain(|i| *i != d);
+            order.insert(0, d);
+        }
+        for i in order {
+            let Some(b) = spec.buttons.get(i) else {
+                continue;
+            };
             let variant = match b.kind {
                 ButtonKind::Primary => PushVariant::Primary,
                 ButtonKind::Secondary => PushVariant::Secondary,
@@ -351,10 +406,7 @@ pub fn alert(ui: &mut Ui, spec: AlertSpec) -> ViewId {
             };
             let v = ui.create(PushButton::new(&b.title).variant(variant));
             let _ = ui.set(v, Prop::Identifier, Value::from(b.title.as_str()));
-            let _ = ui.set(v, Prop::MinWidth, Value::from(metrics::BUTTON_MIN_WIDTH));
-            if spec.stacked && spec.wide_buttons {
-                let _ = ui.set(v, Prop::Width, Value::from(metrics::CONTENT_WIDTH));
-            }
+            let _ = ui.set(v, Prop::Width, Value::from(metrics::CONTENT_WIDTH));
             ui.add_child(row, v);
             ui.connect(v, Signal::Activated, move |ui, _, _| {
                 ui.emit(a, Signal::Activated, Value::Int(i as i64));
@@ -416,8 +468,18 @@ mod tests {
         let (ui, _, a, _) = shown();
         let r = ui.tree.window_rect(a);
         assert_eq!(r.width, 280.0);
-        // 24 + title 22 + 16 + message 32 + 16 + button 28 + 20.
-        assert_eq!(r.height, 24.0 + 22.0 + 16.0 + 32.0 + 16.0 + 28.0 + 20.0);
+        // 24 + title 22 + 8 + message 32 + 20 + two buttons 28 + 8 + 28 + 20.
+        assert_eq!(
+            r.height,
+            24.0 + 22.0 + 8.0 + 32.0 + 20.0 + 28.0 + 8.0 + 28.0 + 20.0
+        );
+        // The default button comes first.
+        let row = *ui.tree.children(a).last().unwrap_or(&a);
+        let first = ui.tree.children(row)[0];
+        assert_eq!(
+            ui.tree.get(first).and_then(|n| n.identifier.as_deref()),
+            Some("Send")
+        );
     }
 
     #[test]
@@ -425,7 +487,7 @@ mod tests {
         let (mut ui, win, a, log) = shown();
         let kids = ui.tree.children(a).to_vec();
         let row = *kids.last().unwrap_or(&a);
-        let send = ui.tree.children(row)[1];
+        let send = ui.tree.children(row)[0];
         let r = ui.tree.window_rect(send);
         let p = Point::new(r.x + 10.0, r.y + 10.0);
         ui.pointer_move(win, p, Mods::empty());
