@@ -1415,6 +1415,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "vetro-bench"
+version = "0.1.0"
+dependencies = [
+ "libvetro",
+]
+
+[[package]]
 name = "vetro-gallery"
 version = "0.1.0"
 dependencies = [

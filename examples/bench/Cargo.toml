@@ -1,0 +1,18 @@
+[package]
+name = "vetro-bench"
+description = "Frame time budgets of Vetro, headless (cargo xtask bench)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "vetro-bench"
+path = "src/main.rs"
+
+[dependencies]
+libvetro = { path = "../../crates/libvetro" }
+
+[lints]
+workspace = true

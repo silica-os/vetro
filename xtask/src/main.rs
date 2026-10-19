@@ -7,6 +7,7 @@
 //! cargo xtask package [--debug]                      libvetro.so.1 with versioned symbols
 //! cargo xtask abi-check                              compare the exported ABI with abi/
 //! cargo xtask vm <build|run EXAMPLE|shot PATH>       build for and run in the dev VM
+//! cargo xtask bench                                  headless frame-time budgets (release)
 //! ```
 
 // serde_json's `value["key"]` returns Null for a missing key: it never panics.
@@ -31,11 +32,27 @@ fn main() {
         Some("abi-check") => abi::check(rest),
         Some("package") => abi::package(rest).map(|_| ()),
         Some("vm") => vm::vm(rest),
+        Some("bench") => bench(),
         _ => Err("usage: cargo xtask <sync-kit|check-sources|header|abi-check|vm> …".to_string()),
     };
     if let Err(e) = result {
         eprintln!("xtask: {e}");
         std::process::exit(1);
+    }
+}
+
+/// `cargo xtask bench`: the headless frame-time budgets, in release.
+fn bench() -> Result<()> {
+    let status =
+        std::process::Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
+            .current_dir(root())
+            .args(["run", "--release", "-p", "vetro-bench"])
+            .status()
+            .map_err(|e| format!("cargo: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("budgets exceeded".into())
     }
 }
 
