@@ -1,0 +1,37 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/silica-os/vetro"
+rust-version = "1.99"
+
+[workspace.dependencies]
+skia-safe = { version = "0.153", default-features = false, features = ["binary-cache", "embed-icudtl", "gl", "egl", "vulkan", "wayland", "x11", "textlayout", "svg", "webp", "jpeg", "pdf", "skottie"] }
+
+[workspace.lints.rust]
+# "deny" and not "forbid": the FFI surface, the Vulkan and EGL backends re-enable it, only
+# there, each block with a SAFETY comment.
+unsafe_code = "deny"
+
+# Never crash. They are allowed in tests (clippy.toml).
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unreachable = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+undocumented_unsafe_blocks = "deny"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

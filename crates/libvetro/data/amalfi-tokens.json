@@ -1,0 +1,807 @@
+{
+  "$schema": "silica-amalfi-tokens/1",
+  "name": "Silica 1.0 Amalfi",
+  "source": "Silica 1.0 Amalfi UI Kit.sketch (doc DEB2F9E8-966A-4E25-A6AF-6BAF189DD87E), exported 2026-10-16",
+  "unit": "pt (1 pt = 1 logical px)",
+  "colors": {
+    "light": {
+      "Accent/Amalfi": "#0E77E6FF",
+      "Accent/Amalfi Pressed": "#0A60BDFF",
+      "Accent/Amalfi Soft": "#0E77E624",
+      "Palette/Limone": "#FFC21AFF",
+      "Palette/Limone Scuro": "#A67600FF",
+      "Palette/Arancia": "#F98A17FF",
+      "Palette/Terracotta": "#F0562EFF",
+      "Palette/Bouganville": "#E5338AFF",
+      "Palette/Ulivo": "#34A853FF",
+      "Palette/Mare": "#00AFAAFF",
+      "Palette/Lavanda": "#8B5CF6FF",
+      "Surface/Window": "#FFFFFFFF",
+      "Surface/Sidebar": "#F5F6F8FF",
+      "Surface/Raised": "#FFFFFFFF",
+      "Surface/Sunken": "#EEF0F3FF",
+      "Surface/Control": "#FFFFFFFF",
+      "Surface/Control Pressed": "#E9ECF0FF",
+      "Text/Primary": "#1D1E21FF",
+      "Text/Secondary": "#5F636BFF",
+      "Text/Tertiary": "#9A9EA6FF",
+      "Text/On Accent": "#FFFFFFFF",
+      "Line/Separator": "#1D1E211A",
+      "Line/Border": "#1D1E2124",
+      "Line/Focus": "#0E77E673",
+      "Glass/Tint": "#FFFFFF99",
+      "Glass/Tint Thick": "#FFFFFF94",
+      "Glass/Rim Light": "#FFFFFFB3",
+      "Glass/Rim Dark": "#0000001F",
+      "Shadow/Soft": "#00000024",
+      "State/Hover Overlay": "#FFFFFF29",
+      "State/Press Overlay": "#00000024",
+      "Shadow/1": "#0000001A",
+      "Shadow/2": "#0000001F",
+      "Shadow/3": "#0000002E",
+      "App/Terminal/Selection": "#B3D7FFFF",
+      "App/Terminal/Cursor": "#9D9D9DFF",
+      "App/Terminal/Find Match": "#C8C8C8FF",
+      "App/Terminal/ANSI Red": "#990100FF",
+      "App/Terminal/ANSI Green": "#00A502FF",
+      "App/Terminal/ANSI Yellow": "#999901FF",
+      "App/Terminal/ANSI Blue": "#0021B2FF",
+      "App/Terminal/ANSI Magenta": "#B200B2FF",
+      "App/Terminal/ANSI Cyan": "#02A5B3FF",
+      "App/Mail/Search Highlight": "#FFE14DFF",
+      "App/Mail/Flag": "#FF8A1EFF",
+      "App/Faro/Selection": "#AFB0B5FF",
+      "App/Faro/Pill": "#D9DADFFF",
+      "App/Faro/Completion": "#A2A3A8FF",
+      "App/Faro/Key": "#D2D3D8FF",
+      "App/Mission Control/Bar": "#9E9FA5FF",
+      "App/Mission Control/Bar Expanded": "#A4A5ABFF",
+      "App/Mission Control/Ring": "#3B99FDFF",
+      "App/Mission Control/Bar Capsule": "#87888EFF",
+      "App/Preview/Paper": "#FFFFFFFF",
+      "App/Preview/Ink": "#D3CDC4FF",
+      "App/Preview/Ink Strong": "#8F887DFF",
+      "App/Preview/Canvas": "#FFFFFFFF",
+      "App/Preview/Pages Behind": "#F3F0EAFF",
+      "App/Preview/Match": "#FFFF3BFF",
+      "App/Preview/Handle": "#316EC8FF",
+      "App/Preview/Highlight": "#F5D164FF",
+      "Menu Bar/Selection": "#FFFFFF66"
+    },
+    "dark": {
+      "Accent/Amalfi": "#3D95FFFF",
+      "Accent/Amalfi Pressed": "#2F7FE6FF",
+      "Accent/Amalfi Soft": "#3D95FF38",
+      "Palette/Limone": "#FFCF3DFF",
+      "Palette/Limone Scuro": "#FFCF3DFF",
+      "Palette/Arancia": "#FF9F40FF",
+      "Palette/Terracotta": "#FF6A43FF",
+      "Palette/Bouganville": "#F04A9AFF",
+      "Palette/Ulivo": "#4CC75AFF",
+      "Palette/Mare": "#19C8C4FF",
+      "Palette/Lavanda": "#A07CFFFF",
+      "Surface/Window": "#1B1C1FFF",
+      "Surface/Sidebar": "#232428FF",
+      "Surface/Raised": "#2A2B30FF",
+      "Surface/Sunken": "#141518FF",
+      "Surface/Control": "#3A3B40FF",
+      "Surface/Control Pressed": "#46474DFF",
+      "Text/Primary": "#F4F5F7FF",
+      "Text/Secondary": "#B0B4BCFF",
+      "Text/Tertiary": "#7C808AFF",
+      "Text/On Accent": "#FFFFFFFF",
+      "Line/Separator": "#F4F5F71F",
+      "Line/Border": "#F4F5F729",
+      "Line/Focus": "#3D95FF73",
+      "Glass/Tint": "#2A2B3099",
+      "Glass/Tint Thick": "#2A2B3094",
+      "Glass/Rim Light": "#FFFFFF38",
+      "Glass/Rim Dark": "#00000066",
+      "Shadow/Soft": "#00000052",
+      "State/Hover Overlay": "#FFFFFF1F",
+      "State/Press Overlay": "#00000040",
+      "Shadow/1": "#00000033",
+      "Shadow/2": "#00000052",
+      "Shadow/3": "#0000005C",
+      "App/Calculator/Window": "#272727FF",
+      "App/Calculator/Digit": "#6A6A6BFF",
+      "App/Calculator/Function": "#919191FF",
+      "App/Calculator/Operator": "#FF8B00FF",
+      "App/Calculator/Scientific": "#585859FF",
+      "App/Calculator/Display Secondary": "#9E9E9EFF",
+      "App/Calculator/Sidebar": "#2B2B2DFF",
+      "App/Calculator/Segment": "#373738FF",
+      "App/Calculator/Bit Editor": "#484849FF",
+      "App/Clock/Window": "#1E1E1EFF",
+      "App/Clock/Card": "#323232FF",
+      "App/Clock/Accent": "#FF9230FF",
+      "App/Clock/Switch On": "#FD9435FF",
+      "App/Clock/Start": "#30D159FF",
+      "App/Clock/Stop": "#FF4245FF",
+      "App/Clock/Lap Button": "#2F2F2FFF",
+      "App/Clock/Ring Track": "#3B3B3DFF",
+      "App/Clock/Sheet": "#272727FF",
+      "App/Clock/Timer Card": "#48484AFF",
+      "App/Terminal/Selection": "#3E638BFF",
+      "App/Terminal/Cursor": "#9D9D9DFF",
+      "App/Terminal/Find Match": "#5A5A5BFF",
+      "App/Terminal/ANSI Red": "#990100FF",
+      "App/Terminal/ANSI Green": "#00A502FF",
+      "App/Terminal/ANSI Yellow": "#999901FF",
+      "App/Terminal/ANSI Blue": "#0021B2FF",
+      "App/Terminal/ANSI Magenta": "#B200B2FF",
+      "App/Terminal/ANSI Cyan": "#02A5B3FF",
+      "App/Mail/Search Highlight": "#8A7300FF",
+      "App/Mail/Flag": "#FF9C3DFF",
+      "App/Faro/Selection": "#949599FF",
+      "App/Faro/Pill": "#828387FF",
+      "App/Faro/Completion": "#97989CFF",
+      "App/Faro/Key": "#B7B8BCFF",
+      "App/Mission Control/Bar": "#55565BFF",
+      "App/Mission Control/Bar Expanded": "#5B5C61FF",
+      "App/Mission Control/Ring": "#3B99FDFF",
+      "App/Mission Control/Bar Capsule": "#78797EFF",
+      "App/Preview/Paper": "#FFFFFFFF",
+      "App/Preview/Ink": "#D3CDC4FF",
+      "App/Preview/Ink Strong": "#8F887DFF",
+      "App/Preview/Canvas": "#2F2D2CFF",
+      "App/Preview/Pages Behind": "#2B2927FF",
+      "App/Preview/Match": "#FFFF3BFF",
+      "App/Preview/Handle": "#316EC8FF",
+      "App/Preview/Highlight": "#F5D164FF",
+      "Menu Bar/Selection": "#FFFFFF33"
+    }
+  },
+  "typography": {
+    "Display": {
+      "family": "Inter",
+      "size": 34,
+      "lineHeight": 40,
+      "weight": 700,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Title 1": {
+      "family": "Inter",
+      "size": 26,
+      "lineHeight": 32,
+      "weight": 700,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Title 2": {
+      "family": "Inter",
+      "size": 20,
+      "lineHeight": 26,
+      "weight": 600,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Title 3": {
+      "family": "Inter",
+      "size": 16,
+      "lineHeight": 22,
+      "weight": 600,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Headline": {
+      "family": "Inter",
+      "size": 13,
+      "lineHeight": 18,
+      "weight": 600,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Body": {
+      "family": "Inter",
+      "size": 13,
+      "lineHeight": 18,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Body Emphasis": {
+      "family": "Inter",
+      "size": 13,
+      "lineHeight": 18,
+      "weight": 500,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Sidebar": {
+      "family": "Inter",
+      "size": 14,
+      "lineHeight": 20,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ],
+      "use": "sidebar row labels; selected row weight 600"
+    },
+    "Sidebar Header": {
+      "family": "Inter",
+      "size": 12,
+      "lineHeight": 16,
+      "weight": 600,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ],
+      "use": "sidebar section headers"
+    },
+    "Callout": {
+      "family": "Inter",
+      "size": 12,
+      "lineHeight": 16,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Label": {
+      "family": "Inter",
+      "size": 11,
+      "lineHeight": 14,
+      "weight": 500,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Caption": {
+      "family": "Inter",
+      "size": 11,
+      "lineHeight": 14,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ],
+      "note": "user decision 2026-10-17: no text below 11 pt (the smallest macOS text measured)"
+    },
+    "Mono": {
+      "family": "JetBrains Mono",
+      "size": 12,
+      "lineHeight": 16,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Secondary",
+        "Text/Tertiary",
+        "Text/On Accent",
+        "Accent/Amalfi"
+      ]
+    },
+    "Field": {
+      "family": "Inter",
+      "size": 26,
+      "lineHeight": 32,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Tertiary"
+      ],
+      "use": "Faro and Launcher search field"
+    },
+    "Numeral 40": {
+      "family": "Inter",
+      "size": 40,
+      "lineHeight": null,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Tertiary"
+      ],
+      "use": "Clock app large digits (dark appearance)"
+    },
+    "Numeral 64": {
+      "family": "Inter",
+      "size": 64,
+      "lineHeight": null,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Tertiary"
+      ],
+      "use": "Clock app large digits (dark appearance)"
+    },
+    "Numeral 72": {
+      "family": "Inter",
+      "size": 72,
+      "lineHeight": null,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Tertiary"
+      ],
+      "use": "Clock app large digits (dark appearance)"
+    },
+    "Numeral 104": {
+      "family": "Inter",
+      "size": 104,
+      "lineHeight": null,
+      "weight": 400,
+      "colors": [
+        "Text/Primary",
+        "Text/Tertiary"
+      ],
+      "use": "Clock app large digits (dark appearance)"
+    },
+    "Wordmark": {
+      "family": "Inter",
+      "size": 110,
+      "weight": 700,
+      "colors": [
+        "Text/On Accent"
+      ],
+      "use": "kit cover only, not UI"
+    },
+    "Lock Date": {
+      "family": "Inter",
+      "size": 32,
+      "lineHeight": 40,
+      "weight": 600,
+      "colors": [
+        "On Photo"
+      ],
+      "use": "lock screen date (lock-screen.md); white 84 % over the wallpaper"
+    },
+    "Lock Clock": {
+      "family": "Inter",
+      "size": 200,
+      "lineHeight": 200,
+      "weight": 600,
+      "tracking": -6,
+      "features": [
+        "tnum"
+      ],
+      "colors": [
+        "On Photo"
+      ],
+      "use": "lock screen time; digits draw about 145 pt (>= the measured 142); Amalfi glass digits, see materials.md"
+    }
+  },
+  "grid": {
+    "base": 4,
+    "rule": "every frame x, y, width, height is a multiple of 4; no half points; text frames on whole points"
+  },
+  "spacing": {
+    "xs": 4,
+    "s": 8,
+    "m": 12,
+    "l": 16,
+    "xl": 20,
+    "xxl": 24,
+    "padding": {
+      "regularWindow": 20,
+      "compactWindowAndPanel": 16,
+      "documentAndSettings": 24
+    }
+  },
+  "controlHeights": {
+    "mini": 20,
+    "small": 24,
+    "regular": 28,
+    "large": 32,
+    "note": "one scale for every control; toolbar items are 36 (user decision 2026-10-17, macOS capsules are 38); never resize a control inside a bar",
+    "toolbar": 36
+  },
+  "controlIcons": {
+    "mini": 14,
+    "small": 16,
+    "regular": 20,
+    "large": 20,
+    "toolbar": 20,
+    "accessory": 16,
+    "menuBar": 20,
+    "sidebar": 20,
+    "list": 20,
+    "note": "user decision 2026-10-17: Amalfi symbols draw ink = size x 20/24, so a 20 pt symbol draws ~17 pt like macOS; never smaller. Icons are set in the Silica Symbols font (silica-icons fonts/): font size = icon size"
+  },
+  "radii": {
+    "smallControl": 7,
+    "regularControl": 9,
+    "field": 9,
+    "menu": 12,
+    "popover": 16,
+    "sheetAlert": 20,
+    "window": 18,
+    "sidebarInsetPanel": 14,
+    "faroAndLauncher": 28,
+    "capsule": "height/2",
+    "cornerStyle": "smooth (continuous), smoothing 0.6, on every rounded surface"
+  },
+  "shadows": {
+    "light": {
+      "1": {
+        "color": "#0000001A",
+        "y": 1,
+        "blur": 2
+      },
+      "2": {
+        "color": "#0000001F",
+        "y": 4,
+        "blur": 12
+      },
+      "3": {
+        "color": "#0000002E",
+        "y": 12,
+        "blur": 32
+      }
+    },
+    "dark": {
+      "1": {
+        "color": "#00000033",
+        "y": 1,
+        "blur": 2
+      },
+      "2": {
+        "color": "#00000052",
+        "y": 4,
+        "blur": 12
+      },
+      "3": {
+        "color": "#0000005C",
+        "y": 12,
+        "blur": 32
+      }
+    },
+    "use": {
+      "1": "small raised controls (switch thumb, slider thumb, secondary push button)",
+      "2": "Glass/Regular objects (Dock, toolbar controls, banners, HUDs)",
+      "3": "windows, menus, popovers, Faro, sheets (Glass/Thick and windows)"
+    },
+    "onPhoto": {
+      "color": "#00000066",
+      "x": 0,
+      "y": 1,
+      "blur": 6,
+      "use": "Light appearance: every text and status item drawn straight on the wallpaper (lock screen date, name, hint, address, labels, Status Bar Lock Screen context); Dark draws none"
+    }
+  },
+  "focus": {
+    "halo": 3,
+    "color": "Line/Focus",
+    "follows": "control radius, outside the control"
+  },
+  "materials": {
+    "Glass/Regular": {
+      "backgroundBlur": 6,
+      "saturation": 1.1,
+      "tint": {
+        "light": "#FFFFFF99",
+        "dark": "#2A2B3099"
+      },
+      "rimInside": {
+        "width": 1,
+        "light": "#0000001F",
+        "dark": "#00000066"
+      },
+      "rimLight": {
+        "innerShadow": {
+          "x": 0,
+          "y": 1,
+          "blur": 1
+        },
+        "light": "#FFFFFFB3",
+        "dark": "#FFFFFF38"
+      },
+      "shadow": "shadows.2",
+      "refraction": {
+        "distortion": 0.3,
+        "depth": 0.35,
+        "chromaticAberration": 0.03
+      },
+      "specularHighlights": true,
+      "brightness": {
+        "light": 1.25,
+        "dark": 1.1
+      }
+    },
+    "Glass/Thick": {
+      "backgroundBlur": 10,
+      "saturation": 1.1,
+      "tint": {
+        "light": "#FFFFFF94",
+        "dark": "#2A2B3094"
+      },
+      "rimInside": {
+        "width": 1,
+        "light": "#0000001F",
+        "dark": "#00000066"
+      },
+      "rimLight": {
+        "innerShadow": {
+          "x": 0,
+          "y": 1,
+          "blur": 1
+        },
+        "light": "#FFFFFFB3",
+        "dark": "#FFFFFF38"
+      },
+      "shadow": "shadows.3",
+      "refraction": {
+        "distortion": 0.22,
+        "depth": 0.28,
+        "chromaticAberration": 0.015
+      },
+      "specularHighlights": true,
+      "brightness": {
+        "light": 1.12,
+        "dark": 1.05
+      }
+    },
+    "Glass/Clear": {
+      "lens": true,
+      "blur": 2,
+      "refraction": {
+        "distortion": 0.3,
+        "depth": 0.5,
+        "chromaticAberration": 0.08,
+        "magnification": 1.1
+      },
+      "specularHighlights": true,
+      "brightness": {
+        "light": 1.04,
+        "dark": 0.98
+      },
+      "tint": null,
+      "shadow": null,
+      "rimInside": {
+        "width": 1,
+        "light": "#0000001F",
+        "dark": "#00000066"
+      },
+      "rimLight": {
+        "innerShadow": {
+          "x": 0,
+          "y": 1,
+          "blur": 1
+        },
+        "light": "#FFFFFFB3",
+        "dark": "#FFFFFF38"
+      }
+    },
+    "Blur/Sidebar Title Bar": {
+      "backgroundBlur": 10,
+      "saturation": 1.0,
+      "tint": {
+        "light": "#F5F6F8CC",
+        "dark": "#232428CC"
+      },
+      "refraction": null,
+      "specularHighlights": false,
+      "rimInside": null,
+      "rimLight": null,
+      "shadow": null,
+      "use": "title bar section over a sidebar in split title bars; sidebar rows scroll under it"
+    },
+    "Glass/Lock": {
+      "backgroundBlur": 20,
+      "saturation": 1.1,
+      "tint": {
+        "light": "#FFFFFF99",
+        "dark": "#FFFFFF47"
+      },
+      "refraction": null,
+      "specularHighlights": false,
+      "rimInside": {
+        "width": 1,
+        "light": "#0000001F",
+        "dark": "#FFFFFF3D"
+      },
+      "rimLight": {
+        "innerShadow": {
+          "x": 0,
+          "y": 1,
+          "blur": 1
+        },
+        "light": "#FFFFFFB3",
+        "dark": "#FFFFFF38"
+      },
+      "shadow": null,
+      "increaseContrast": {
+        "dark": {
+          "fill": "#2A2B30F2",
+          "rimInside": "#FFFFFF99",
+          "backgroundBlur": 20,
+          "saturation": 1.0
+        },
+        "light": {
+          "fill": "#FFFFFFF2",
+          "rimInside": "#1D1E2199",
+          "backgroundBlur": 20,
+          "saturation": 1.0
+        }
+      },
+      "use": "lock screen: password field, help button, action buttons; Increase Contrast and Reduce Transparency variants are also the Status Bar plates (status-bar.md). Kit styles <App>/Glass/Lock, <App>/Glass/Lock Increase Contrast, <App>/Glass/Lock Reduce Transparency",
+      "reduceTransparency": {
+        "dark": {
+          "fill": "#5B5C5EFF",
+          "rimInside": "#FFFFFF3D",
+          "rimLight": "#FFFFFF38"
+        },
+        "light": {
+          "fill": "#FFFFFFFF",
+          "rimInside": "#0000001F",
+          "rimLight": "#FFFFFFB3"
+        },
+        "note": "the materials fallback: tint over Surface/Window, rims kept, no blur"
+      }
+    },
+    "Glass/Clock": {
+      "blurType": "glass",
+      "backgroundBlur": 8,
+      "saturation": 1.3,
+      "brightness": 1.3,
+      "refraction": {
+        "distortion": 0.5,
+        "depth": 0.6,
+        "chromaticAberration": 0.05
+      },
+      "specularHighlights": true,
+      "fill": "#FFFFFFC2",
+      "lineInside": {
+        "width": 1,
+        "color": "#FFFFFFCC"
+      },
+      "rimOutside": {
+        "width": 1,
+        "light": "#00000052",
+        "dark": "#00000052"
+      },
+      "shadow": null,
+      "reduceTransparency": {
+        "fill": "#FFFFFFEB",
+        "blur": null,
+        "lineInside": null
+      },
+      "increaseContrast": {
+        "fill": "#FFFFFFFF",
+        "blur": null,
+        "lineInside": null,
+        "rimOutside": {
+          "width": 2,
+          "color": "#00000066"
+        }
+      },
+      "use": "lock screen clock digits only (Lock Clock); clipped to the glyphs"
+    },
+    "Scrim/Lock Light": {
+      "type": "linear gradient, top to bottom",
+      "stops": [
+        [
+          0,
+          "#00000033"
+        ],
+        [
+          0.3,
+          "#00000000"
+        ],
+        [
+          0.6,
+          "#00000000"
+        ],
+        [
+          1,
+          "#00000059"
+        ]
+      ],
+      "use": "Light appearance lock screen, over the dimmed wallpaper, under everything else (provisional legibility aid)"
+    }
+  },
+  "states": {
+    "hoverOverlay": {
+      "light": "#FFFFFF29",
+      "dark": "#FFFFFF1F"
+    },
+    "pressOverlay": {
+      "light": "#00000024",
+      "dark": "#00000040"
+    },
+    "disabled": "whole control at 35 % opacity, no hover/press; a select-one segmented control keeps its selection visible (dimmed with the rest)"
+  },
+  "windowControls": {
+    "note": "measured values from docs/spec/windows.md, kept on purpose (user decision)",
+    "dot": 16,
+    "firstCentreX": 26,
+    "pitch": 23,
+    "close": {
+      "fill": [
+        "#FE6E66",
+        "#F58B83"
+      ],
+      "rim": "#DD4D47 0.5"
+    },
+    "minimise": {
+      "fill": [
+        "#FCB82E",
+        "#FED344"
+      ],
+      "rim": "#D08D0B 0.5"
+    },
+    "zoom": {
+      "fill": [
+        "#62D02E",
+        "#99D979"
+      ],
+      "rim": "#519E32 0.5"
+    }
+  },
+  "switch": {
+    "thumbInset": 2,
+    "pressedStretch": 4,
+    "note": "thumb inset 2 pt on every side at every size; pressed thumb stretches 4 pt toward the middle (user decision 2026-10-16)",
+    "lens": {
+      "mini": "thumb + 8",
+      "small": "thumb + 8",
+      "regular": "thumb + 12"
+    }
+  },
+  "iconFont": {
+    "family": "Silica Symbols",
+    "files": "silica-icons/fonts/SilicaSymbols-{Light,Regular,Semibold}.otf",
+    "weights": {
+      "Light": 300,
+      "Regular": 400,
+      "Semibold": 600
+    },
+    "em": "the 24 u symbol canvas; font size N draws the N pt symbol box; ascender = em, descender 0",
+    "codepoints": "silica-icons/fonts/codepoints.json (PUA from U+E000); ligatures accept the symbol name",
+    "flutter": "silica-icons/fonts/flutter/silica_symbols.dart (one family per weight)",
+    "secondaryLayers": "not in the font: wifi-0/1/2, signal-1/2/3, volume-0/1/2, progress draw their 35 % layers from the SVG"
+  }
+}

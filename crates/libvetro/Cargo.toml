@@ -1,0 +1,19 @@
+[package]
+name = "libvetro"
+description = "Vetro, Silica's native system toolkit: the shared library"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "vetro_lib"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+skia-safe.workspace = true
+tracing = "0.1"
+
+[lints]
+workspace = true
