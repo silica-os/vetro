@@ -27,7 +27,7 @@ fn sidebar_masters_match_the_kit() {
         let root = scene.master.root.clone();
         let size = scene.master.size();
         scene.mount_sized(size, |ui| {
-            build(ui, &root, name).unwrap_or_else(|| ui.create(Panel))
+            build(ui, &root, name).unwrap_or_else(|| ui.create(Panel::default()))
         });
         if name.contains("Volume/Hover/") {
             // The kit shows the eject button hovered too.

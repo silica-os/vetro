@@ -745,8 +745,19 @@ pub fn footer(ui: &mut Ui) -> ViewId {
 
 /// The sidebar panel: `Surface/Sidebar`, its children stacked 12 in from the top and the
 /// sides, 8 pt before every header but the first, and a trailing [`Footer`] at the bottom.
-#[derive(Debug, Default)]
-pub struct Panel;
+#[derive(Debug)]
+pub struct Panel {
+    /// Space above the first child (12; 60 under a window's toolbar, 8 below its bar).
+    pub top: f32,
+}
+
+impl Default for Panel {
+    fn default() -> Self {
+        Panel {
+            top: metrics::PANEL_PADDING,
+        }
+    }
+}
 
 impl Panel {
     fn is_header(ui: &Ui, id: ViewId) -> bool {
@@ -765,7 +776,7 @@ impl Widget for Panel {
             _ => metrics::ROW_WIDTH + 2.0 * metrics::PANEL_PADDING,
         };
         let inner = (w - 2.0 * metrics::PANEL_PADDING).max(0.0);
-        let mut h = metrics::PANEL_PADDING;
+        let mut h = self.top;
         for c in cx.children() {
             h += cx.measure(c, Proposal::new(Some(inner), None)).height;
         }
@@ -776,7 +787,7 @@ impl Widget for Panel {
         let inner = (size.width - 2.0 * metrics::PANEL_PADDING).max(0.0);
         let kids = cx.children();
         let last = kids.len().checked_sub(1);
-        let mut y = metrics::PANEL_PADDING;
+        let mut y = self.top;
         let mut first = true;
         for (i, c) in kids.into_iter().enumerate() {
             let s = cx.measure(c, Proposal::new(Some(inner), None));

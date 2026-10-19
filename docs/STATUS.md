@@ -144,13 +144,31 @@ deviations they cause are in [kit-issues.md](kit-issues.md).
 | Steppers | `Stepper`, `stepper_with_field` | 68 | done |
 | Progress | `ProgressBar`, `CircularProgress`, `Spinner` | 84 | done |
 | Disclosure | `Disclosure`, `DisclosureGroup` | 44 | done |
-| Fields | `TextField` (text, secure, area, search, tokens, combo, value), `Token`, `ClearButton`, `ComboButton` | 126 of 128 | partial: `Combo Box/Open` (the list is a menu) waits for Menus |
+| Fields | `TextField` (text, secure, area, search, tokens, combo, value), `Token`, `ClearButton`, `ComboButton` | 126 of 128 | partial: `Combo Box/Open` (the list is a menu, `menus::present` with `Placement::List` is ready) is not wired |
+| Buttons | `PushButton`, `IconButton`, `HelpButton`, `LinkButton`, `GradientButtons`, `ToolbarButton`, `MenuButton` | 214 of 220 | partial: pop-up/pull-down `Open` masters geometry only (the kit's glass hides the button), `App` masters need app icons |
+| Group Boxes | `GroupBox` | 8 | done |
+| Wells | `ColorWell`, `ImageWell`, swatch grid, colour panel popup | 74 | done |
+| Forms | `form_row`, `form_section`, `form_footer`, `form_layout` | 22 | done |
+| Scrollbars | `Scrollbar`, `ScrollbarCorner`, `ScrollView` | 34 | done |
+| Menus | `MenuItem`, `Menu`, `menus::present` (pop-up, pull-down, list, at a point) | 48 of 52 (+4 open buttons) | partial: `Item/App` needs app icons; the chosen-row blink is not timed |
+| Sidebars | `Row`, `Badge`, `EjectButton`, `Header`, `group`, `Footer`, `Panel` | 44 | done |
+| Titlebars | `Dot`, `WindowControls`, `TitleBlock`, `SearchPiece`, `SwitcherPiece`, `SendPiece`, `Strip`, `Spacer`, `TitleBar`, `Tab`, `TabBar` | 181 | done |
+| Popovers | `PopoverShape`, `Popover`, `popovers::present` (flips sides) | 84 | done |
+| Alerts | `Alert`, `alert()` (title, message, accessories, buttons, badge) | 26 | done (icons are bitmaps: masked) |
+| Dialogs | `Dialog`, `Pane`, `browser`, `dialog_footer` | 12 | done |
+| Status Bar | `StatusItem`, `StatusBar` (plates of Increase Contrast and Reduce Transparency) | 22 | done |
+| Windows | `WindowFrame`, `Block` | 40 | done for the window's own layers; nested components of other families (group boxes, segments, checkbox group, search field, menu bar) are placeholders there |
 
 Shared changes made on the way: the harness expands nested symbol masters (path-addressed
 layers, instance text overrides applied in order) and walks groups; `Scene` has
 `auto_geometry_except`, `extra_mask`, `png_margin`, `hover_at`, `press_at`; `Recorder` has
 `glyph_sized`; `Widget::attached` lets a view start animations on its own; `Ui::set` restarts
-ticking; the tooltip presenter is part of `Ui`; `Text` has a wrapping paragraph mode.
+ticking; the tooltip presenter is part of `Ui`; `Text` has a wrapping paragraph mode. The harness
+also has `ignore_aspects` (a kit defect on every layer, e.g. the dark glass blur) and
+`skip_trees` (nested components replaced by placeholders); kit-driven builders shared by the
+tests live in `tests/common/mod.rs`. Open problems: app icons (Item/App, Pop-up/App, alert
+icons), the `Open` masters of buttons, the combo box list, the menu bar family, Windows with
+the real nested components, window controls placement (kit pitch 24 vs measured 23).
 
 ## Next
 

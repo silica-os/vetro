@@ -434,7 +434,7 @@ pub fn check(args: &[String]) -> Result<()> {
     let mut problems = Vec::new();
     for name in &now {
         let want = format!("{name}@@VETRO_1.0");
-        if !syms.iter().any(|s| *s == want) {
+        if !syms.contains(&want) {
             problems.push(format!("missing {want}"));
         }
     }
