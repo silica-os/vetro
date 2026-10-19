@@ -22,3 +22,16 @@ test that names it, until the kit is fixed.
   (user decision 2026-10-16, as the switch lens) takes half minus 1 (`Lens#radii`).
 - **Lens refraction.** The kit's `Glass/Clear` lens of a dragged switch refracts the track
   beneath it; the lens region is masked in the pixel comparison, its geometry is compared.
+- **Resized nested instances.** A symbol instance resized in the kit keeps its nested layers'
+  places (`Group Boxes/Box/Nested`: the inner box 256 wide over a 224 master, the switch row;
+  `Fields/Token Field` and `Fields/Search Field/*/Token*`: tokens as wide as their label over
+  a 64 wide master). The harness expands nested masters unscaled, so those layers are named
+  in the tests and not compared.
+- **Text measure.** Sketch measures a few strings a little wider than Skia: "Notifications"
+  (Headline, 88 against 84 on the 4 pt grid), the hint "Drop image" (61 against 59.96), the
+  label boxes of tokens (36 against a 32 frame, which is also 28 tall).
+- **Swatch names.** `Wells/Swatch Row/Row 4` has a "Shadow/Warm" swatch: no such token (silica_ui
+  shows Shadow/Soft); a swatch's colour is an override of the master's fill the export does not
+  carry, so every chip's fill but the accent one is named as a deviation.
+- **Icon + Label buttons, pop-up and pull-down `Open`, `Pop-up/App`**: not covered yet (menus,
+  app icons).

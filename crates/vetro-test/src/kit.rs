@@ -316,6 +316,25 @@ fn collect_texts<'a>(layers: &'a mut [KitLayer], out: &mut Vec<&'a mut KitLayer>
     }
 }
 
+/// The layer at `path` under `from` and its origin relative to `from`'s: names are joined
+/// with `/`, and a name may itself contain one (`Palette/Mare`), so every split is tried.
+fn resolve<'a>(from: &'a KitLayer, path: &str) -> Option<(&'a KitLayer, Point)> {
+    if path.is_empty() {
+        return Some((from, Point::ZERO));
+    }
+    let parts: Vec<&str> = path.split('/').collect();
+    for k in 1..=parts.len() {
+        let name = parts[..k].join("/");
+        let rest = parts[k..].join("/");
+        for c in from.children.iter().filter(|c| c.name == name) {
+            if let Some((l, o)) = resolve(c, &rest) {
+                return Some((l, c.frame.origin() + o));
+            }
+        }
+    }
+    None
+}
+
 /// Sketch's weight scale to CSS.
 pub fn css_weight(sketch: u64) -> u16 {
     match sketch {
@@ -406,22 +425,13 @@ impl KitMaster {
 
     /// The layer at `path` (child names joined with `/`).
     pub fn layer(&self, path: &str) -> Option<&KitLayer> {
-        let mut cur = &self.root;
-        for part in path.split('/') {
-            cur = cur.children.iter().find(|c| c.name == part)?;
-        }
-        Some(cur)
+        resolve(&self.root, path).map(|(l, _)| l)
     }
 
     /// The frame of the layer at `path` in the master's coordinates.
     pub fn rect_in_master(&self, path: &str) -> Option<Rect> {
-        let mut cur = &self.root;
-        let mut origin = Point::ZERO;
-        for part in path.split('/') {
-            cur = cur.children.iter().find(|c| c.name == part)?;
-            origin = origin + cur.frame.origin();
-        }
-        Some(Rect::from_origin_size(origin, cur.frame.size()))
+        let (l, origin) = resolve(&self.root, path)?;
+        Some(Rect::from_origin_size(origin, l.frame.size()))
     }
 
     /// Every layer with its path and its frame in the master's coordinates.
