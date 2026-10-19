@@ -783,6 +783,33 @@ impl Platform {
                     s.wants_frame = true;
                 }
             }
+            Request::SetInputRegion(id, region) => {
+                let wl_region = match region {
+                    Some(rects) => {
+                        let Ok(r) =
+                            smithay_client_toolkit::compositor::Region::new(&self.compositor)
+                        else {
+                            return;
+                        };
+                        for x in rects {
+                            r.add(
+                                x.x.floor() as i32,
+                                x.y.floor() as i32,
+                                x.width.ceil() as i32,
+                                x.height.ceil() as i32,
+                            );
+                        }
+                        Some(r)
+                    }
+                    None => None,
+                };
+                if let Some(s) = self.surface_mut(id) {
+                    s.role
+                        .wl_surface()
+                        .set_input_region(wl_region.as_ref().map(|r| r.wl_region()));
+                    s.wants_frame = true;
+                }
+            }
             Request::Redraw(id) => {
                 if let Some(s) = self.surface_mut(id) {
                     s.wants_frame = true;

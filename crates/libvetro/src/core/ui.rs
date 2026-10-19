@@ -101,6 +101,8 @@ pub enum Request {
     /// The window's content goes under the window buttons; its toolbar is this tall
     /// (silica-window-v1 full-size content; 0: a regular title bar).
     SetToolbarHeight(WindowId, f32),
+    /// The part of the window that takes pointer input (window coordinates; `None`: all of it).
+    SetInputRegion(WindowId, Option<Vec<Rect>>),
     /// Join Ossido's shell channel.
     ConnectShell,
     /// A request on the shell channel.
@@ -1073,6 +1075,17 @@ impl Ui {
         self.requests.push(Request::SetToolbarHeight(window, h));
     }
 
+    /// Limits pointer input to `region` (window coordinates; `None`: the whole window). Shell
+    /// surfaces with room for shadows or magnified content pass the rest through.
+    pub fn set_input_region(&mut self, window: WindowId, region: Option<Vec<Rect>>) {
+        let region = region.map(|r| {
+            r.into_iter()
+                .filter(|r| r.width.is_finite() && r.height.is_finite())
+                .collect()
+        });
+        self.requests.push(Request::SetInputRegion(window, region));
+    }
+
     /// Lays out and records every window again (the fonts changed).
     pub fn refresh_all(&mut self) {
         let roots: Vec<ViewId> = self.windows.iter().map(|w| w.root).collect();
@@ -1914,7 +1927,9 @@ impl Ui {
 
     // ----- Animations and timers ------------------------------------------------------------
 
-    pub(crate) fn start_animating(&mut self, id: ViewId) {
+    /// Ticks view `id` every frame until its [`Widget::tick`](crate::core::Widget::tick)
+    /// returns false (what [`EventCx::animate`](crate::core::EventCx::animate) does).
+    pub fn start_animating(&mut self, id: ViewId) {
         if !self.animating.contains(&id) {
             self.animating.push(id);
         }
