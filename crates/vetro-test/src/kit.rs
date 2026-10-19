@@ -105,6 +105,15 @@ pub struct KitLayer {
     pub clips: bool,
     /// Children.
     pub children: Vec<KitLayer>,
+    /// `stringValue` overrides of a symbol instance, in order (the text of its labels).
+    pub overrides: Vec<String>,
+    /// The text comes from an override of the instance: the layer's width is that of the
+    /// master's default text, not of this one.
+    pub text_overridden: bool,
+    /// The layer is inside a symbol instance wider or narrower than its master: the kit keeps
+    /// the master's horizontal places, which are not what the PNG shows (nor what the
+    /// constraints give).
+    pub inexact_x: bool,
 }
 
 /// A master: the root layer and its PNG.
@@ -273,6 +282,76 @@ fn bounds_of(l: &KitLayer, origin: Point, root: bool, depth: usize) -> Option<Re
     Some(children.map_or(own, |c| own.union(c)))
 }
 
+/// Fills the children of symbol instances of other masters (not the Icon Kit's glyphs) with
+/// the nested master's layers, unscaled, so their layers can be compared by path
+/// (`Checkbox box/Box`).
+fn expand_nested(l: &mut KitLayer, depth: usize) {
+    if depth > 8 {
+        return;
+    }
+    for c in &mut l.children {
+        if let Some(m) = c.master.as_deref()
+            && c.library.is_none()
+            && c.children.is_empty()
+            && let Ok(nested) = KitMaster::load(m)
+        {
+            let resized = (c.frame.width - nested.root.frame.width).abs() > 0.01;
+            c.children = nested.root.children;
+            if resized {
+                mark_inexact(&mut c.children);
+            }
+            // The export keeps an override by the object id of the nested layer, which the
+            // layers do not carry: the overrides come bottom layer first, the layers top
+            // layer first, so the i-th text override goes to the i-th text layer that is not
+            // a glyph, counting from the last.
+            let mut texts = Vec::new();
+            collect_texts(&mut c.children, &mut texts);
+            texts.reverse();
+            for (value, target) in c.overrides.clone().into_iter().zip(texts) {
+                target.text = Some(value);
+                target.text_overridden = true;
+            }
+        }
+        expand_nested(c, depth + 1);
+    }
+}
+
+fn mark_inexact(layers: &mut [KitLayer]) {
+    for l in layers {
+        l.inexact_x = true;
+        mark_inexact(&mut l.children);
+    }
+}
+
+fn collect_texts<'a>(layers: &'a mut [KitLayer], out: &mut Vec<&'a mut KitLayer>) {
+    for l in layers {
+        if l.kind == "Text" && !l.name.starts_with("Glyph") {
+            out.push(l);
+        } else {
+            collect_texts(&mut l.children, out);
+        }
+    }
+}
+
+/// The layer at `path` under `from` and its origin relative to `from`'s: names are joined
+/// with `/`, and a name may itself contain one (`Palette/Mare`), so every split is tried.
+fn resolve<'a>(from: &'a KitLayer, path: &str) -> Option<(&'a KitLayer, Point)> {
+    if path.is_empty() {
+        return Some((from, Point::ZERO));
+    }
+    let parts: Vec<&str> = path.split('/').collect();
+    for k in 1..=parts.len() {
+        let name = parts[..k].join("/");
+        let rest = parts[k..].join("/");
+        for c in from.children.iter().filter(|c| c.name == name) {
+            if let Some((l, o)) = resolve(c, &rest) {
+                return Some((l, c.frame.origin() + o));
+            }
+        }
+    }
+    None
+}
+
 /// Sketch's weight scale to CSS.
 pub fn css_weight(sketch: u64) -> u16 {
     match sketch {
@@ -322,6 +401,17 @@ fn layer(v: &Value, root: bool) -> KitLayer {
             .as_array()
             .map(|a| a.iter().map(|c| layer(c, false)).collect())
             .unwrap_or_default(),
+        overrides: v["overrides"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter(|o| o["property"].as_str() == Some("stringValue"))
+                    .filter_map(|o| o["value"].as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        text_overridden: false,
+        inexact_x: false,
     }
 }
 
@@ -332,9 +422,11 @@ impl KitMaster {
         let text = std::fs::read_to_string(&path)
             .map_err(|e| format!("{}: {e} (run cargo xtask sync-kit)", path.display()))?;
         let v: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let mut root = layer(&v, true);
+        expand_nested(&mut root, 0);
         Ok(KitMaster {
             name: name.to_string(),
-            root: layer(&v, true),
+            root,
             png: kit_dir().join(format!("{name}@2x.png")),
         })
     }
@@ -351,22 +443,13 @@ impl KitMaster {
 
     /// The layer at `path` (child names joined with `/`).
     pub fn layer(&self, path: &str) -> Option<&KitLayer> {
-        let mut cur = &self.root;
-        for part in path.split('/') {
-            cur = cur.children.iter().find(|c| c.name == part)?;
-        }
-        Some(cur)
+        resolve(&self.root, path).map(|(l, _)| l)
     }
 
     /// The frame of the layer at `path` in the master's coordinates.
     pub fn rect_in_master(&self, path: &str) -> Option<Rect> {
-        let mut cur = &self.root;
-        let mut origin = Point::ZERO;
-        for part in path.split('/') {
-            cur = cur.children.iter().find(|c| c.name == part)?;
-            origin = origin + cur.frame.origin();
-        }
-        Some(Rect::from_origin_size(origin, cur.frame.size()))
+        let (l, origin) = resolve(&self.root, path)?;
+        Some(Rect::from_origin_size(origin, l.frame.size()))
     }
 
     /// Every layer with its path and its frame in the master's coordinates.

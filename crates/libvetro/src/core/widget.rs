@@ -152,6 +152,10 @@ pub trait Widget: AsAny {
         None
     }
 
+    /// The view was put in a window (it can start animations that run on their own: a
+    /// spinner).
+    fn attached(&mut self, _cx: &mut EventCx<'_>) {}
+
     /// Whether the core dims the whole view when it is disabled (Amalfi: 35 %).
     fn dims_when_disabled(&self) -> bool {
         true

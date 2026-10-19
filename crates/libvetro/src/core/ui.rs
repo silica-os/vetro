@@ -223,6 +223,8 @@ pub struct Ui {
     pub(crate) menus: crate::core::menu::MenuState,
     pub(crate) app_info: crate::core::app::AppInfo,
     pub(crate) app_handler: Option<crate::core::app::AppHandler>,
+    /// The tooltip presenter.
+    pub(crate) tooltips: crate::amalfi::tooltips::Presenter,
 }
 
 impl Default for Ui {
@@ -258,6 +260,7 @@ impl Ui {
             menus: crate::core::menu::MenuState::default(),
             app_info: crate::core::app::AppInfo::default(),
             app_handler: None,
+            tooltips: crate::amalfi::tooltips::Presenter::default(),
         }
     }
 
@@ -413,10 +416,23 @@ impl Ui {
     }
 
     fn set_window_recursive(&mut self, id: ViewId, window: Option<WindowId>) {
+        let mut attached = Vec::new();
         for v in self.tree.descendants(id) {
             if let Some(n) = self.tree.get_mut(v) {
+                if n.window.is_none() && window.is_some() {
+                    attached.push(v);
+                }
                 n.window = window;
                 n.flags.insert(NodeFlags::NEEDS_PAINT);
+            }
+        }
+        for v in attached {
+            if let Some(mut w) = self.tree.take_widget(v) {
+                {
+                    let mut cx = EventCx { ui: self, id: v };
+                    w.attached(&mut cx);
+                }
+                self.tree.put_widget(v, w);
             }
         }
     }
@@ -624,10 +640,14 @@ impl Ui {
             PropChange::Layout => {
                 self.request_layout(id);
                 self.request_paint(id);
+                self.start_animating(id);
                 Ok(())
             }
             PropChange::Paint => {
                 self.request_paint(id);
+                // A property can start an animation that runs on its own (an indeterminate
+                // progress bar): a view with none stops ticking at once.
+                self.start_animating(id);
                 Ok(())
             }
             PropChange::Nothing => Ok(()),
@@ -1456,6 +1476,7 @@ impl Ui {
         if let Some(w) = self.window_mut(window) {
             w.hover = new_chain;
         }
+        crate::amalfi::tooltips::hover_changed(self, window);
     }
 
     /// The pointer left the window.
