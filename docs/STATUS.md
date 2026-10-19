@@ -31,6 +31,22 @@ Gate (real exit codes): `cargo fmt --check && cargo clippy --all-targets -- -D w
     buttons, app shortcuts, signals with deferred re-entrant-safe handlers, timers,
     animations, damage tracking, headless snapshots, accessibility tree.
 
+## Services
+
+`libvetro::services` ([docs/services.md](services.md) has the interface tables and gaps):
+
+- Typed zbus proxies for all 13 daemon interfaces plus `org.freedesktop.Notifications` and the
+  FileChooser, OpenURI, Settings and Request portals; plain structures in `services::types`.
+- `Observable<T>` (single-threaded, callbacks and `Changes` async stream), `AppearanceWatcher`
+  (`Appearance` + `SystemLook` from System1 `State`/`Changed`), `SettingsWatcher` (all keys, key
+  repeat, renderer choice), `Services` facade (lazy session bus connection, proxy getters,
+  `run()` drives the watchers on the caller's executor). Defaults when the daemon or bus is
+  absent; typed `Error` (`is_service_absent`).
+- 17 tests (observable, mappings, proxies against mock servers on a private `dbus-daemon`,
+  live watchers incl. daemon appearing and disappearing).
+- Gaps: no renderer-backend key and no appearance keys in Settings1; JSON replies are raw
+  strings; portal request helper and Trust1 agent callbacks missing.
+
 ## Decisions
 
 - **Library name.** The cdylib is built as `libvetro_lib.so` (the crate `vetro` is the
@@ -56,4 +72,4 @@ Gate (real exit codes): `cargo fmt --check && cargo clippy --all-targets -- -D w
 2. `vetro-test`: kit fixtures (synced from silica-design) and the parity harness.
 3. Amalfi components family by family with parity tests.
 4. Platform (Wayland, SCTK) with shm raster first, then EGL/GL and Vulkan.
-5. Declarative layer, services, C API, gallery in the VM.
+5. Declarative layer, C API, gallery in the VM.
