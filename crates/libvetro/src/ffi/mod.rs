@@ -996,7 +996,10 @@ pub extern "C" fn vetro_view_connect(
                     let mut text = String::new();
                     let cv = c_value(value, &mut text);
                     let vp = view_ptr(view);
-                    let user = data.user;
+                    // `&data` makes the closure own all of `data` (a field access alone
+                    // would capture only the pointer, and drop the destroy guard early).
+                    let d = &data;
+                    let user = d.user;
                     // SAFETY: the caller's callback; `cv` and its text live for the call.
                     enter(ui, || unsafe { f(vp, signal, &cv, user) });
                 });
@@ -1425,6 +1428,33 @@ mod tests {
         }
         // Calling back into the ABI from a callback works.
         assert_eq!(vetro_is_dark(), 0);
+    }
+
+    static DESTROYED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    unsafe extern "C" fn noop(_: *mut VetroView, _: u32, _: *const VetroValue, _: *mut c_void) {}
+
+    unsafe extern "C" fn mark(_: *mut c_void) {
+        DESTROYED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    #[test]
+    fn callback_data_lives_until_disconnect() {
+        assert_eq!(vetro_headless_init(), VETRO_OK);
+        let v = vetro_view_new(VETRO_KIND_VIEW);
+        let h = vetro_view_connect(
+            v,
+            VETRO_SIGNAL_RESIZED,
+            Some(noop),
+            std::ptr::null_mut(),
+            Some(mark),
+        );
+        assert_ne!(h, 0);
+        assert_eq!(DESTROYED.load(std::sync::atomic::Ordering::SeqCst), 0);
+        vetro_disconnect(h);
+        assert_eq!(DESTROYED.load(std::sync::atomic::Ordering::SeqCst), 1);
+        vetro_view_release(v);
+        vetro_headless_shutdown();
     }
 
     #[test]
