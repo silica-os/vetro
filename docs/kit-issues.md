@@ -44,3 +44,12 @@ test that names it, until the kit is fixed.
 - `Menus/Menu`: two `Separator/Rest/Line` layers share one name, so their layer path is
   ambiguous; geometry skips them (the `Item/Separator` masters cover them).
 - `Menus/Item/App` and `Buttons/Pop-up/App` need app icons: not implemented.
+
+## Sidebars
+
+- `Sidebars/Footer`: the Settings button is a second plus button (the nested instance has no
+  glyph override); ours shows a gear and the test sets the plus.
+- `Row/*/Selected Inactive`: the light selection uses `Surface/Control Pressed` and the dark one
+  `Surface/Control`; ours follows each.
+- `Row/Volume`: the kit names the glyph `externaldrive`; ours is the `drive` symbol.
+- `Row/Volume/Hover`: the eject button is hovered together with the row.

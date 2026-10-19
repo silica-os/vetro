@@ -11,6 +11,7 @@ pub mod menus;
 pub mod progress;
 pub mod scrollbars;
 pub mod segments;
+pub mod sidebars;
 pub mod sliders;
 pub mod steppers;
 pub mod switch;
