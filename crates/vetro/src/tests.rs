@@ -222,3 +222,44 @@ fn controls_bind_state() {
         1
     );
 }
+
+struct Big {
+    prefix: crate::Model<&'static str>,
+}
+
+impl Component for Big {
+    fn body(&self, cx: &mut Cx) -> Element {
+        cx.watch(&self.prefix);
+        let p = self.prefix.get();
+        crate::list(100_000, 28.0, move |i| {
+            label(format!("{p} {i}")).id(&format!("r{i}"))
+        })
+        .id("list")
+        .fill()
+    }
+}
+
+#[test]
+fn lists_make_only_the_rows_in_sight() {
+    let rt = Headless::new().unwrap();
+    let prefix = crate::Model::new("Row");
+    let p2 = prefix.clone();
+    let w = vetro_kit::Window::new(300.0, 200.0).unwrap();
+    let h = vetro_kit::View::new(vetro_kit::Kind::VIEW).unwrap();
+    w.set_content(&h).unwrap();
+    w.show().unwrap();
+    let root = mount(h, move || Big { prefix: p2.clone() });
+    // A frame lays the list out.
+    w.snapshot_png(1.0).unwrap();
+    let list = root.host().find("list").unwrap();
+    let live = list.children().len();
+    assert!(live > 4 && live < 20, "{live} rows");
+    let r0 = root.host().find("r0").unwrap();
+    assert_eq!(r0.get_str(Prop::TEXT).unwrap(), "Row 0");
+    // A render updates the live rows in place.
+    prefix.update(|p| *p = "Item");
+    rt.advance(0.01);
+    w.snapshot_png(1.0).unwrap();
+    assert_eq!(r0.get_str(Prop::TEXT).unwrap(), "Item 0");
+    assert_eq!(root.host().find("r0").unwrap(), r0);
+}

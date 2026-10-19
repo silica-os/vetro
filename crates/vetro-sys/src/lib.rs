@@ -237,6 +237,8 @@ pub type VetroBytesFn =
     Option<unsafe extern "C" fn(data: *const u8, len: usize, user: *mut c_void)>;
 /// A menu item was chosen (id), or a pop-up menu ended (0: dismissed).
 pub type VetroMenuFn = Option<unsafe extern "C" fn(id: u32, user: *mut c_void)>;
+/// Makes the view of row `index` of a list (a new reference the list takes over), or null.
+pub type VetroRowFn = Option<unsafe extern "C" fn(index: u64, user: *mut c_void) -> *mut VetroView>;
 
 // Properties: the numbers of libvetro's `core::value::Prop` (checked by its tests).
 ids! { PROPERTIES,
@@ -297,6 +299,10 @@ ids! { KINDS,
     VETRO_KIND_LINK_BUTTON = 30, VETRO_KIND_TOOLBAR_BUTTON = 31, VETRO_KIND_DISCLOSURE = 32,
     VETRO_KIND_DISCLOSURE_GROUP = 33, VETRO_KIND_GROUP_BOX = 34, VETRO_KIND_COLOR_WELL = 35,
     VETRO_KIND_IMAGE_WELL = 36, VETRO_KIND_SCROLL_VIEW = 37, VETRO_KIND_DIAL = 38,
+    VETRO_KIND_LIST = 39, VETRO_KIND_TABLE_HEADER = 40, VETRO_KIND_SIDEBAR_ROW = 41,
+    VETRO_KIND_SIDEBAR_HEADER = 42, VETRO_KIND_SIDEBAR_GROUP = 43, VETRO_KIND_SIDEBAR_PANEL = 44,
+    VETRO_KIND_FORM = 45, VETRO_KIND_FORM_ROW = 46, VETRO_KIND_TITLE_BAR = 47,
+    VETRO_KIND_TAB_BAR = 48, VETRO_KIND_TAB = 49, VETRO_KIND_STATUS_BAR = 50, VETRO_KIND_TEXT = 51,
 }
 
 // Window kinds.
@@ -419,6 +425,8 @@ macro_rules! for_each_function {
             // Windows of views; sheets.
             fn vetro_view_window(view: *mut $crate::VetroView) -> *mut $crate::VetroWindow;
             fn vetro_window_new_sheet(parent: *mut $crate::VetroWindow, width: f32, height: f32) -> *mut $crate::VetroWindow;
+            // Virtualised lists.
+            fn vetro_list_set_rows(view: *mut $crate::VetroView, rows: u64, row_height: f32, provider: $crate::VetroRowFn, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> $crate::VetroStatus;
         }
     };
 }

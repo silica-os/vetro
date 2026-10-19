@@ -170,4 +170,17 @@ impl Kind {
     pub const IMAGE_WELL: Kind = Kind(sys::VETRO_KIND_IMAGE_WELL);
     pub const SCROLL_VIEW: Kind = Kind(sys::VETRO_KIND_SCROLL_VIEW);
     pub const DIAL: Kind = Kind(sys::VETRO_KIND_DIAL);
+    pub const LIST: Kind = Kind(sys::VETRO_KIND_LIST);
+    pub const TABLE_HEADER: Kind = Kind(sys::VETRO_KIND_TABLE_HEADER);
+    pub const SIDEBAR_ROW: Kind = Kind(sys::VETRO_KIND_SIDEBAR_ROW);
+    pub const SIDEBAR_HEADER: Kind = Kind(sys::VETRO_KIND_SIDEBAR_HEADER);
+    pub const SIDEBAR_GROUP: Kind = Kind(sys::VETRO_KIND_SIDEBAR_GROUP);
+    pub const SIDEBAR_PANEL: Kind = Kind(sys::VETRO_KIND_SIDEBAR_PANEL);
+    pub const FORM: Kind = Kind(sys::VETRO_KIND_FORM);
+    pub const FORM_ROW: Kind = Kind(sys::VETRO_KIND_FORM_ROW);
+    pub const TITLE_BAR: Kind = Kind(sys::VETRO_KIND_TITLE_BAR);
+    pub const TAB_BAR: Kind = Kind(sys::VETRO_KIND_TAB_BAR);
+    pub const TAB: Kind = Kind(sys::VETRO_KIND_TAB);
+    pub const STATUS_BAR: Kind = Kind(sys::VETRO_KIND_STATUS_BAR);
+    pub const TEXT: Kind = Kind(sys::VETRO_KIND_TEXT);
 }

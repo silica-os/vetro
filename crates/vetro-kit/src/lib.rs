@@ -581,6 +581,42 @@ impl View {
         }
     }
 
+    /// Sets the rows of a list (`Kind::LIST`): count, height, and `row` that makes the view
+    /// of a row when it scrolls into sight (rows out of sight are dropped).
+    pub fn set_rows(
+        &self,
+        rows: usize,
+        row_height: f32,
+        row: impl FnMut(usize) -> Option<View> + 'static,
+    ) -> Result<()> {
+        type Cb = Box<dyn FnMut(usize) -> Option<View>>;
+        unsafe extern "C" fn call(index: u64, user: *mut c_void) -> *mut sys::VetroView {
+            // SAFETY: `user` is a boxed `Cb`, alive until destroy.
+            let cb = unsafe { &mut *(user.cast::<Cb>()) };
+            match usize::try_from(index).ok().and_then(cb) {
+                Some(v) => {
+                    // The list takes over this handle's reference.
+                    let p = v.as_ptr();
+                    std::mem::forget(v);
+                    p
+                }
+                None => std::ptr::null_mut(),
+            }
+        }
+        let data: Cb = Box::new(row);
+        // SAFETY: the data is freed by `destroy::<Cb>` exactly once.
+        check(unsafe {
+            f::vetro_list_set_rows(
+                self.as_ptr(),
+                rows as u64,
+                row_height,
+                Some(call),
+                boxed(data),
+                Some(destroy::<Cb>),
+            )
+        })
+    }
+
     /// Records the drawing again.
     pub fn request_paint(&self) {
         // SAFETY: a handle.

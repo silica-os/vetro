@@ -1019,6 +1019,47 @@ pub extern "C" fn vetro_view_connect(
     })
 }
 
+/// Sets the rows of a list: count, height and the provider that makes the visible ones.
+#[unsafe(no_mangle)]
+pub extern "C" fn vetro_list_set_rows(
+    view: *mut VetroView,
+    rows: u64,
+    row_height: f32,
+    provider: VetroRowFn,
+    user: *mut c_void,
+    destroy: VetroDestroy,
+) -> VetroStatus {
+    guard(VETRO_ERROR_PLATFORM, || {
+        let data = UserData::new(user, destroy);
+        let r = (|| {
+            let v = view_id(view)?;
+            let f = provider.ok_or(VETRO_ERROR_INVALID_ARGUMENT)?;
+            let rows = usize::try_from(rows).map_err(|_| VETRO_ERROR_INVALID_ARGUMENT)?;
+            let make: crate::amalfi::collections::RowProvider = Box::new(move |ui, i| {
+                // `&data` keeps the whole destroy guard in the closure.
+                let d = &data;
+                let user = d.user;
+                // SAFETY: the caller's provider with its own data; it returns a new reference.
+                let p = enter(ui, || unsafe { f(i as u64, user) });
+                if p.is_null() {
+                    None
+                } else {
+                    view_id(p).ok().filter(|id| ui.tree.contains(*id))
+                }
+            });
+            with_ui(move |ui| {
+                ui.with_widget::<crate::amalfi::collections::ListView, _>(v, move |l| {
+                    l.reset(rows, row_height, make)
+                })
+                .ok_or(VETRO_ERROR_INVALID_ARGUMENT)
+            })?
+        })();
+        let s = r.err().unwrap_or(VETRO_OK);
+        set_last(s);
+        s
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn vetro_disconnect(handler: u64) {
     guard((), || {

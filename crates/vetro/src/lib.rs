@@ -41,8 +41,8 @@ use std::rc::{Rc, Weak};
 
 pub use element::{
     Animation, Component, Element, Handler, IntoChildren, Key, MenuEntry, PValue, Transition,
-    button, column, component, custom, for_each, grid, group, host, label, overlay, row, spacer,
-    symbol, text_view, view,
+    button, column, component, custom, for_each, grid, group, host, label, list, overlay, row,
+    spacer, symbol, text_view, view,
 };
 pub use vetro_kit as kit;
 
@@ -51,7 +51,7 @@ pub mod prelude {
     pub use crate::controls::*;
     pub use crate::{
         Animation, Binding, Component, Cx, Element, MenuEntry, Model, State, Transition, button,
-        column, component, custom, for_each, grid, group, host, label, overlay, row, spacer,
+        column, component, custom, for_each, grid, group, host, label, list, overlay, row, spacer,
         symbol, text_view, view,
     };
     pub use vetro_kit::{Color, Signal, Value, rgba};

@@ -63,6 +63,7 @@ typedef void (*VetroMeasureFn)(float proposed_width, float proposed_height, floa
 typedef uint8_t (*VetroEventFn)(VetroView *view, const VetroEvent *event, void *user);
 typedef void (*VetroBytesFn)(const uint8_t *data, size_t len, void *user);
 typedef void (*VetroMenuFn)(uint32_t id, void *user);
+typedef VetroView *(*VetroRowFn)(uint64_t index, void *user);
 
 #define VETRO_OK (0)
 #define VETRO_ERROR_NO_SUCH_OBJECT (-1)
@@ -279,6 +280,19 @@ typedef void (*VetroMenuFn)(uint32_t id, void *user);
 #define VETRO_KIND_IMAGE_WELL 36u
 #define VETRO_KIND_SCROLL_VIEW 37u
 #define VETRO_KIND_DIAL 38u
+#define VETRO_KIND_LIST 39u
+#define VETRO_KIND_TABLE_HEADER 40u
+#define VETRO_KIND_SIDEBAR_ROW 41u
+#define VETRO_KIND_SIDEBAR_HEADER 42u
+#define VETRO_KIND_SIDEBAR_GROUP 43u
+#define VETRO_KIND_SIDEBAR_PANEL 44u
+#define VETRO_KIND_FORM 45u
+#define VETRO_KIND_FORM_ROW 46u
+#define VETRO_KIND_TITLE_BAR 47u
+#define VETRO_KIND_TAB_BAR 48u
+#define VETRO_KIND_TAB 49u
+#define VETRO_KIND_STATUS_BAR 50u
+#define VETRO_KIND_TEXT 51u
 
 /* Window kinds. */
 #define VETRO_WINDOW_NORMAL 1u
@@ -387,6 +401,7 @@ VetroStatus vetro_measure_text(const char *text, const char *family, float size,
 VetroStatus vetro_view_perform(VetroView *view, uint32_t action);
 VetroWindow *vetro_view_window(VetroView *view);
 VetroWindow *vetro_window_new_sheet(VetroWindow *parent, float width, float height);
+VetroStatus vetro_list_set_rows(VetroView *view, uint64_t rows, float row_height, VetroRowFn provider, void *user, VetroDestroy destroy);
 
 #ifdef __cplusplus
 }

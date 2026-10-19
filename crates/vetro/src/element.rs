@@ -178,10 +178,19 @@ pub(crate) struct Presentation {
     pub(crate) dismissed: Option<Rc<dyn Fn()>>,
 }
 
+/// The rows of a virtualised list.
+#[derive(Clone)]
+pub(crate) struct Rows {
+    pub(crate) count: usize,
+    pub(crate) height: f32,
+    pub(crate) row: Rc<dyn Fn(usize) -> Element>,
+}
+
 /// Side effects of an element beyond its view.
 #[derive(Clone, Default)]
 pub(crate) struct Effects {
     pub(crate) menu: Option<Rc<Vec<MenuEntry>>>,
+    pub(crate) rows: Option<Rows>,
     pub(crate) sheet: Option<Presentation>,
     pub(crate) popover: Option<Presentation>,
 }
@@ -679,6 +688,20 @@ pub fn custom<T: vetro_kit::Custom>(make: impl Fn() -> T + 'static) -> Element {
         key: None,
         effects: Effects::default(),
     }
+}
+
+/// A virtualised list of `count` rows of `row_height`: `row` builds the element of a row when
+/// it scrolls into sight, and rows out of sight are dropped (a list of a million rows costs
+/// what is shown). Rows are built again on every render of the component holding the list.
+/// `Signal::SELECTION_CHANGED` carries the selected rows, `Signal::DOUBLE_CLICKED` a row.
+pub fn list(count: usize, row_height: f32, row: impl Fn(usize) -> Element + 'static) -> Element {
+    let mut e = Element::of(Kind::LIST);
+    e.effects.rows = Some(Rows {
+        count,
+        height: row_height,
+        row: Rc::new(row),
+    });
+    e
 }
 
 /// One element per item, keyed by `id` so that items keep their views (and state) when the

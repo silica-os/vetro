@@ -45,10 +45,16 @@ task takes `/dev/shm/silica-vm.lock` per command). Local e2e: Ossido headless (s
   deferred re-entrant-safe handlers; timers; animations; damage tracking; snapshots;
   accessibility descriptions/tree and actions (`Ui::perform`); menus (`core::menu`: menu bar,
   pop-up menus through the menu service).
-- **Components**: push buttons (all 200 kit masters pass geometry + pixels), labels, symbol
-  images. The other families are being implemented on branch `components` (agent, worktree
-  `~/build/wt-components-vetro`); merge it, then extend `ffi/kinds.rs`, `vetro-sys` KINDS and
-  the declarative builders for every new widget.
+- **Components**: every kit family (table under "Components"), plus `TextView` (documents:
+  line index with Fenwick sums, layout per visible line, 0.8 ms per key on a 10 MB document in
+  release) and the collections (`amalfi::collections`): `ListView`, a virtualised list (rows
+  made by a provider when they come into sight, dropped when they leave; a million rows cost
+  what is shown; selection with ⌘/⇧, keyboard, double click, overlay scroller on hover) and
+  `TableHeader` (columns, sort indicator, `ValueChanged` = column, negative when descending).
+- **App**: lifecycle (`core::app`), single instance and reopen through silica-desktop's app
+  registry socket (`platform::registry`), drag and drop, xdg-activation, pinch gestures, idle
+  inhibition, the AccessKit AT-SPI bridge (`platform::a11y`, verified in the VM when
+  `IsEnabled`), the inspector socket (`vetro-inspector` CLI dumps trees and display lists).
 - **Platform** (`platform::wayland`, SCTK 0.20): xdg toplevels, popups, layer-shell, session
   lock, fractional scale + viewporter, cursor-shape, keyboard (xkb, client-side repeat with
   Settings1 rate/delay), pointer + axis (value120), text-input-v3 (preedit/commit/delete,
@@ -79,9 +85,11 @@ radius, clip, opacity, hidden, disabled, id, tooltip, accessibility label, dark,
 alignment, style, control size, text style/colour, symbol, default/cancel, handlers). Keyed
 reconciler with property diffing and handler swapping; one batched re-render per loop turn;
 `mount` (declarative inside imperative), `host` (imperative inside declarative), `preview`
-(headless PNG). Not yet: implicit animations (`.animation`, `.transition`), `.sheet`,
-`.popover`, `.toolbar`, `.context_menu` modifiers, per-component invalidation, `List`/`Table`/
-`Form` mapping (needs the components branch).
+(headless PNG). Implicit animations (`.animation`, `.transition` with FLIP moves and leaving
+views), `.sheet`, `.popover`, `.context_menu`; control builders bound to state
+(`controls.rs`); `list(count, row_height, |i| element)` mounts a tree per visible row and
+renders the live rows again with their component. Not yet: `.toolbar`, a `table` builder over
+`TableHeader` + `list`, `Form` builders.
 
 ## Decisions
 
@@ -121,10 +129,10 @@ reconciler with property diffing and handler swapping; one batched re-render per
 
 - `cargo test`: unit tests, kit parity (`crates/vetro-test/tests/*.rs`), FFI round trips,
   vetro-kit, declarative reconciler.
-- Ossido headless e2e (manual for now): `/dev/shm/headless.sh BIN OUT.png [WxH] [secs]` runs
+- Ossido headless e2e: `examples/gallery/tests/e2e.rs` runs
   `~/silica/silica/target/release/ossido --backend headless` in a private runtime dir, starts
-  the client, screenshots with `silica-cli`; `HEADLESS_CMDS` runs `input.click`/`input.key`.
-  Make it a cargo test in `vetro-test` gated on the binary's presence.
+  the gallery, clicks Quit through the control socket and checks the exit (skipped when the
+  binary is missing). `examples/bench`: frame budgets (500 controls, hover, 10 MB typing).
 - VM: gallery verified with Vulkan (Venus), GL (virgl) and software; dark appearance follows
   System1; menu bar shows the app's menus.
 
@@ -172,19 +180,17 @@ the real nested components, window controls placement (kit pitch 24 vs measured 
 
 ## Next
 
-1. Merge `components` (agent); register kinds; gallery page per family; VM screenshots.
-2. Text fields → platform: `Request::TextInput` with the caret rectangle when a field gets
-   focus, `TextInputSurrounding`; clipboard paste into fields (done in core via
-   `request_paste`).
-3. AccessKit / AT-SPI adapter in the platform (tree from `Ui::accessibility_tree`, actions via
-   `Ui::perform`).
-4. App lifecycle: single instance through silica-desktop's app registry socket protocol
-   (`silica_control::apps`), windowless apps and reopen, standard App/Window/Help menus,
-   About panel, document model.
-5. Window features: sheets attached to windows, tabbing, restoration state, toolbar styles.
-6. Declarative: animations/transitions, sheet/popover/toolbar/context-menu modifiers, List/
-   Table/Form.
-7. `vetro-terminal` (port `crates/embedder/src/termgrid.rs` + `pty.rs`), `vetro-inspector`.
-8. Performance: raster caches for static subtrees, Vulkan frame pipelining, damage-based
-   Vulkan repaint (incremental present), budgets in CI benchmarks.
-9. Then the shell (§2) and apps (§3) — not before the toolkit milestone tests pass.
+1. Kinds registered after the components merge: list, table header, sidebar row/header/
+   group/panel, form and form row, title bar, tab bar, tab, status bar, text
+   (`VETRO_KIND_LIST` … `VETRO_KIND_TEXT`, 39–51). Still to expose through the ABI: alerts
+   (`alert()` as a presented panel), popovers, menus as views, status items (content enum).
+2. Collections: `table` and `outline` (rows with disclosure levels) and a collection (grid)
+   view on the same provider model; column resizing; type-select.
+3. Window features: sheets placed by Ossido, tabbing, restoration state, toolbar styles,
+   size limits (#245).
+4. Performance: raster caches for static subtrees, Vulkan frame pipelining, damage-based
+   Vulkan repaint (incremental present).
+5. Open kit problems: app icons (bitmaps in the kit), `Open` button masters, menu bar family,
+   window dot pitch (kit 24 vs tokens 23: design decision for the Mac session).
+6. `vetro-terminal` (port `crates/embedder/src/termgrid.rs` + `pty.rs`) with the apps phase.
+7. Then the shell (§2) and apps (§3): plan in [shell-and-apps.md](shell-and-apps.md).

@@ -158,6 +158,7 @@ typedef void (*VetroMeasureFn)(float proposed_width, float proposed_height, floa
 typedef uint8_t (*VetroEventFn)(VetroView *view, const VetroEvent *event, void *user);
 typedef void (*VetroBytesFn)(const uint8_t *data, size_t len, void *user);
 typedef void (*VetroMenuFn)(uint32_t id, void *user);
+typedef VetroView *(*VetroRowFn)(uint64_t index, void *user);
 "#;
 
 /// The header's text.
@@ -225,10 +226,19 @@ pub fn header() -> Result<()> {
     m.push_str("  local:\n    *;\n};\n");
     std::fs::write(&map, m).map_err(|e| e.to_string())?;
     let symbols = root().join("abi/vetro-1.symbols");
-    if !symbols.exists() {
-        let list: Vec<&str> = SIGNATURES.iter().map(|s| s.name).collect();
-        std::fs::write(&symbols, list.join("\n") + "\n").map_err(|e| e.to_string())?;
+    // The frozen list only grows: new functions are appended, nothing is removed.
+    let mut list: Vec<String> = std::fs::read_to_string(&symbols)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(str::to_string)
+        .collect();
+    for s in SIGNATURES {
+        if !list.iter().any(|l| l == s.name) {
+            list.push(s.name.to_string());
+        }
     }
+    std::fs::write(&symbols, list.join("\n") + "\n").map_err(|e| e.to_string())?;
     println!("wrote {} and {}", path.display(), map.display());
     Ok(())
 }

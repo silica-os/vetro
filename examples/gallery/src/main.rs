@@ -127,7 +127,20 @@ impl Component for Gallery {
             section("Choices", choices),
             section("Fields", fields),
             section("Animated list", list),
-            section("Disclosure", disclosure),
+            section(
+                "Disclosure and a list of 10 000 rows",
+                row((
+                    disclosure,
+                    vetro::list(10_000, 24.0, |i| {
+                        label(format!("Row {}", i + 1))
+                            .padding_xy(8.0, 0.0)
+                            .align(0)
+                    })
+                    .frame(260.0, 72.0),
+                ))
+                .spacing(24.0)
+                .alignment(0),
+            ),
             text_view("A text view for documents of any size.\nType here.")
                 .height(80.0)
                 .fill_width(),
@@ -186,7 +199,7 @@ fn main() {
     };
     let r = vetro::kit::run("dev.silica.VetroGallery", move || {
         let _ = menus();
-        if let Ok(root) = vetro::window("Vetro Gallery", (900.0, 760.0), || Gallery) {
+        if let Ok(root) = vetro::window("Vetro Gallery", (900.0, 800.0), || Gallery) {
             // The window lives as long as the process.
             std::mem::forget(root);
         }

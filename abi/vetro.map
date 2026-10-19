@@ -82,6 +82,7 @@ VETRO_1.0 {
     vetro_view_perform;
     vetro_view_window;
     vetro_window_new_sheet;
+    vetro_list_set_rows;
   local:
     *;
 };

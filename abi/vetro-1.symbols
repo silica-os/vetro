@@ -76,3 +76,7 @@ vetro_canvas_line
 vetro_canvas_text
 vetro_canvas_glyph
 vetro_measure_text
+vetro_view_perform
+vetro_view_window
+vetro_window_new_sheet
+vetro_list_set_rows

@@ -9,7 +9,7 @@ use std::rc::{Rc, Weak};
 use vetro_kit::{Connection, Prop, Signal, View as KitView};
 
 use crate::element::{
-    Effects, Element, Handler, Key, MenuEntry, PValue, Presentation, What, same_what,
+    Effects, Element, Handler, Key, MenuEntry, PValue, Presentation, Rows, What, same_what,
 };
 use crate::{Component, Cx, Root, Scheduler, Slots};
 
@@ -40,9 +40,21 @@ impl Drop for Shown {
 type MenuCell = Rc<RefCell<Rc<Vec<MenuEntry>>>>;
 
 /// The state of an element's effects.
+type RowFn = Rc<RefCell<Rc<dyn Fn(usize) -> Element>>>;
+
+/// The live rows of a virtualised list: each row is a tree of its own mounted in a host view
+/// the list owns.
+struct RowsState {
+    count: usize,
+    height: f32,
+    row: RowFn,
+    live: Rc<RefCell<Vec<Rc<RootInner>>>>,
+}
+
 #[derive(Default)]
 struct EffectState {
     menu: Option<(MenuCell, Connection)>,
+    rows: Option<RowsState>,
     sheet: Option<Shown>,
     popover: Option<Shown>,
 }
@@ -179,7 +191,7 @@ pub(crate) fn create(elem: Element, sched: &Weak<Scheduler>) -> Option<Instance>
 
 /// Opens, updates or closes the element's sheet, popover and context menu.
 fn apply_effects(view: &KitView, state: &mut EffectState, want: &Effects, sched: &Weak<Scheduler>) {
-    let _ = sched;
+    apply_rows(view, &mut state.rows, want.rows.as_ref(), sched);
     // Context menu: one connection; the entries are swapped each render.
     match (&want.menu, &mut state.menu) {
         (Some(entries), Some((cell, _))) => *cell.borrow_mut() = entries.clone(),
@@ -240,6 +252,69 @@ fn apply_effects(view: &KitView, state: &mut EffectState, want: &Effects, sched:
     }
     present(view, &mut state.sheet, want.sheet.as_ref(), true);
     present(view, &mut state.popover, want.popover.as_ref(), false);
+}
+
+/// Sets a list's rows (when their number or height changed) or renders the live rows again.
+fn apply_rows(
+    view: &KitView,
+    state: &mut Option<RowsState>,
+    want: Option<&Rows>,
+    sched: &Weak<Scheduler>,
+) {
+    let Some(want) = want else {
+        *state = None;
+        return;
+    };
+    if let Some(st) = state.as_mut()
+        && st.count == want.count
+        && st.height == want.height
+    {
+        *st.row.borrow_mut() = want.row.clone();
+        let Some(s) = sched.upgrade() else {
+            return;
+        };
+        // Rows the list dropped have no parent any more.
+        let live: Vec<Rc<RootInner>> = {
+            let mut l = st.live.borrow_mut();
+            l.retain(|r| r.host.parent().is_some());
+            l.clone()
+        };
+        for r in live {
+            r.render(&s);
+        }
+        return;
+    }
+    let row: RowFn = Rc::new(RefCell::new(want.row.clone()));
+    let live: Rc<RefCell<Vec<Rc<RootInner>>>> = Rc::default();
+    let (row2, live2, sched2) = (row.clone(), Rc::downgrade(&live), sched.clone());
+    let set = view.set_rows(want.count, want.height, move |i| {
+        let host = KitView::new(vetro_kit::Kind::VIEW).ok()?;
+        let r = row2.clone();
+        let root = Rc::new(RootInner::new(
+            host.clone(),
+            Rc::new(move || {
+                let f = r.borrow().clone();
+                f(i).fill()
+            }),
+        ));
+        if let Some(s) = sched2.upgrade() {
+            root.render(&s);
+        }
+        if let Some(l) = live2.upgrade() {
+            let mut l = l.borrow_mut();
+            l.retain(|r| r.host.parent().is_some());
+            l.push(root);
+        }
+        Some(host)
+    });
+    if set.is_ok() {
+        *state = Some(RowsState {
+            count: want.count,
+            height: want.height,
+            row,
+            live,
+        });
+    }
 }
 
 fn present(view: &KitView, slot: &mut Option<Shown>, want: Option<&Presentation>, sheet: bool) {

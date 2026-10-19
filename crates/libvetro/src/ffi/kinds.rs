@@ -4,16 +4,21 @@ use vetro_sys::*;
 
 use crate::amalfi::button::PushButton;
 use crate::amalfi::buttons::{HelpButton, IconButton, LinkButton, MenuButton, ToolbarButton};
+use crate::amalfi::collections::{ListView, TableHeader};
 use crate::amalfi::disclosure::{Disclosure, DisclosureGroup};
 use crate::amalfi::fields::{FieldKind, TextField};
+use crate::amalfi::forms::{FormLayout, FormRow};
 use crate::amalfi::group_box::GroupBox;
 use crate::amalfi::label::{Label, SymbolImage};
 use crate::amalfi::progress::{CircularProgress, ProgressBar, Spinner};
 use crate::amalfi::scrollbars::ScrollView;
 use crate::amalfi::segments::SegmentedControl;
+use crate::amalfi::sidebars;
 use crate::amalfi::sliders::{Dial, Slider};
+use crate::amalfi::statusbar::StatusBar;
 use crate::amalfi::steppers::Stepper;
 use crate::amalfi::switch::Switch;
+use crate::amalfi::titlebars::{Tab, TabBar, TitleBar};
 use crate::amalfi::toggles::Toggle;
 use crate::amalfi::wells::{ColorWell, ImageWell};
 use crate::core::layout::{Alignment, Grid, Overlay, Spacer, Stack};
@@ -72,6 +77,19 @@ pub fn make(kind: u32) -> Option<Box<dyn Widget>> {
         VETRO_KIND_IMAGE_WELL => Box::new(ImageWell::new()),
         VETRO_KIND_SCROLL_VIEW => Box::new(ScrollView::new()),
         VETRO_KIND_DIAL => Box::new(Dial::new()),
+        VETRO_KIND_LIST => Box::new(ListView::new(0, 28.0, Box::new(|_, _| None))),
+        VETRO_KIND_TABLE_HEADER => Box::new(TableHeader::new(Vec::new())),
+        VETRO_KIND_SIDEBAR_ROW => Box::new(sidebars::Row::new("folder", "")),
+        VETRO_KIND_SIDEBAR_HEADER => Box::new(sidebars::Header::new("")),
+        VETRO_KIND_SIDEBAR_GROUP => Box::new(sidebars::Group { open: true }),
+        VETRO_KIND_SIDEBAR_PANEL => Box::new(sidebars::Panel::default()),
+        VETRO_KIND_FORM => Box::new(FormLayout::new(None)),
+        VETRO_KIND_FORM_ROW => Box::new(FormRow::new("")),
+        VETRO_KIND_TITLE_BAR => Box::new(TitleBar),
+        VETRO_KIND_TAB_BAR => Box::new(TabBar),
+        VETRO_KIND_TAB => Box::new(Tab::new("")),
+        VETRO_KIND_STATUS_BAR => Box::new(StatusBar),
+        VETRO_KIND_TEXT => Box::new(crate::amalfi::text::Text::new("")),
         _ => return None,
     })
 }
@@ -93,6 +111,9 @@ mod tests {
             VETRO_KIND_SYMBOL,
             VETRO_KIND_SCROLL_VIEW,
             VETRO_KIND_GROUP_BOX,
+            VETRO_KIND_SIDEBAR_GROUP,
+            VETRO_KIND_FORM,
+            VETRO_KIND_FORM_ROW,
         ];
         let mut missing = Vec::new();
         for (name, kind) in vetro_sys::KINDS {

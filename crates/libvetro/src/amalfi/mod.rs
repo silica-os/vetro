@@ -3,6 +3,7 @@
 pub mod alerts;
 pub mod button;
 pub mod buttons;
+pub mod collections;
 pub mod dialogs;
 pub mod disclosure;
 pub mod fields;
