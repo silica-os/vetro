@@ -1351,7 +1351,9 @@ impl Ui {
             local = c + (local - c) * (1.0 / s);
         }
         let inside = Rect::from_size(n.frame.size()).contains(local);
-        if n.flags.contains(NodeFlags::CLIPS) && !inside {
+        let clips = n.flags.contains(NodeFlags::CLIPS)
+            || n.widget.as_deref().is_some_and(|w| w.clips_children());
+        if clips && !inside {
             return None;
         }
         for c in n.children.iter().rev() {
@@ -2070,7 +2072,8 @@ impl Ui {
             );
         }
         n.display.paint(canvas, opts);
-        let clips = n.flags.contains(NodeFlags::CLIPS);
+        let clips = n.flags.contains(NodeFlags::CLIPS)
+            || n.widget.as_deref().is_some_and(|w| w.clips_children());
         if clips {
             canvas.save();
             if m.corner_radius > 0.0 {

@@ -1,109 +1,197 @@
-//! The gallery: every Vetro component in one window, for the dev VM and screenshots.
+//! The gallery: Vetro's components in one window, built with the declarative layer (so it
+//! runs the whole stack: vetro → vetro-kit → the C ABI → libvetro), for the dev VM and
+//! screenshots.
 
-use vetro_lib::amalfi::button::{PushButton, PushVariant};
-use vetro_lib::amalfi::foundation::ControlSize;
-use vetro_lib::core::menu::{Menu, MenuItem, PopupKind};
-use vetro_lib::core::{Alignment, Prop, Signal, Stack, Ui, Value, WindowKind};
-use vetro_lib::geom::Size;
+use vetro::prelude::*;
+use vetro::{Animation, MenuEntry, Transition};
 
-fn build(ui: &mut Ui) {
-    let win = ui.create_window(WindowKind::Normal, Size::new(720.0, 480.0));
-    ui.set_title(win, "Vetro Gallery");
-    let column = ui.create(Stack::column(16.0).aligned(Alignment::LEADING));
-    let _ = ui.set(column, Prop::Padding, Value::from(24.0));
-    let _ = ui.set(column, Prop::MaxWidth, Value::from(f32::INFINITY));
-    let _ = ui.set(column, Prop::MaxHeight, Value::from(f32::INFINITY));
-    let _ = ui.set(column, Prop::FrameAlignment, Value::Int(0));
-    for size in [
-        ControlSize::Mini,
-        ControlSize::Small,
-        ControlSize::Regular,
-        ControlSize::Large,
-    ] {
-        let row = ui.create(Stack::row(12.0));
-        for variant in [
-            PushVariant::Primary,
-            PushVariant::Secondary,
-            PushVariant::Destructive,
-            PushVariant::Borderless,
-            PushVariant::Glass,
-        ] {
-            let b = ui.create(PushButton::new("Button").variant(variant).size(size));
-            ui.connect(b, Signal::Activated, move |_, _, _| {
-                println!("activated {variant:?} {size:?}");
-            });
-            ui.add_child(row, b);
-        }
-        ui.add_child(column, row);
-    }
-    let quit = ui.create(PushButton::new("Quit").variant(PushVariant::Primary));
-    ui.connect(quit, Signal::Activated, |ui, _, _| {
-        ui.request(vetro_lib::core::Request::Quit)
-    });
-    ui.add_child(column, quit);
-    ui.set_content(win, column);
-    ui.connect(column, Signal::ContextMenu, |ui, v, at| {
-        let p = match at {
-            Value::Point(p) => *p,
-            _ => vetro_lib::geom::Point::ZERO,
-        };
-        let origin = ui.tree.window_origin(v);
-        let _ = ui.popup_menu(
-            v,
-            vetro_lib::geom::Rect::new(p.x - origin.x, p.y - origin.y, 0.0, 0.0),
-            PopupKind::Context,
-            0,
-            vec![
-                MenuItem::new("Copy").shortcut("cmd+c"),
-                MenuItem::new("Paste").shortcut("cmd+v"),
-                MenuItem::separator(),
-                MenuItem::new("Toggle Appearance").action(toggle_dark),
-            ],
-            None,
-        );
-    });
-    ui.set_menu_bar(vec![
-        Menu {
-            title: "Vetro Gallery".into(),
-            role: Some("app".into()),
-            items: vec![
-                MenuItem::new("About Vetro Gallery").role("about"),
-                MenuItem::separator(),
-                MenuItem::new("Quit Vetro Gallery")
-                    .shortcut("cmd+q")
-                    .role("quit")
-                    .action(|ui| ui.request(vetro_lib::core::Request::Quit)),
-            ],
-        },
-        Menu {
-            title: "View".into(),
-            role: None,
-            items: vec![
-                MenuItem::new("Toggle Appearance")
-                    .shortcut("cmd+shift+d")
-                    .action(toggle_dark),
-            ],
-        },
-        Menu {
-            title: "Window".into(),
-            role: Some("window".into()),
-            items: vec![MenuItem::new("Minimize").shortcut("cmd+m")],
-        },
-    ]);
-    ui.show_window(win);
+struct Gallery;
+
+fn section(title: &str, content: Element) -> Element {
+    column((
+        label(title).text_style("Headline").color("Text/Secondary"),
+        content,
+    ))
+    .spacing(8.0)
+    .alignment(0)
 }
 
-fn toggle_dark(ui: &mut Ui) {
-    let mut a = ui.appearance;
-    a.dark = !a.dark;
-    ui.set_appearance(a);
+impl Component for Gallery {
+    fn body(&self, cx: &mut Cx) -> Element {
+        let on = cx.state(|| true);
+        let level = cx.state(|| 0.4f64);
+        let count = cx.state(|| 3.0f64);
+        let name = cx.state(String::new);
+        let seg = cx.state(|| 0usize);
+        let pick = cx.state(|| 1usize);
+        let expanded = cx.state(|| false);
+        let sheet = cx.state(|| false);
+        let items = cx.state(|| vec![1u32, 2, 3]);
+        let (i2, i3) = (items.clone(), items.clone());
+        let s2 = sheet.clone();
+
+        let buttons = row((
+            button("Primary").style(0),
+            button("Secondary").style(1),
+            button("Destructive").style(2),
+            button("Borderless").style(3),
+            button("Glass").style(4),
+            help_button(),
+            icon_button("gear"),
+            link("Link"),
+        ))
+        .spacing(12.0);
+        let toggles = row((
+            checkbox("Checkbox", &on.binding()),
+            radio("Radio", on.get(), {
+                let o = on.clone();
+                move || o.set(true)
+            }),
+            switch(&on.binding()),
+        ))
+        .spacing(16.0);
+        let values = row((
+            slider(&level.binding(), 0.0, 1.0).width(200.0),
+            stepper(&count.binding(), 0.0, 10.0, 1.0),
+            label(format!("{:.0} %  ·  {}", level.get() * 100.0, count.get())),
+        ))
+        .spacing(16.0);
+        let progress_row = row((
+            progress(Some(level.get())).width(200.0),
+            progress(None).width(120.0),
+            spinner(),
+        ))
+        .spacing(16.0);
+        let choices = row((
+            segmented(&["Day", "Week", "Month"], &seg.binding()),
+            pop_up(&["Small", "Medium", "Large"], &pick.binding()),
+            pull_down("Actions", &["Rename", "Duplicate", "Move to Trash"], |_| {}),
+        ))
+        .spacing(16.0);
+        let fields = row((
+            text_field("Name", &name.binding()).width(180.0),
+            secure_field("Password", &cx.state(String::new).binding()).width(160.0),
+            search_field("Search", &cx.state(String::new).binding()).width(180.0),
+        ))
+        .spacing(12.0);
+        let list = row((
+            button("Add").on_activate(move || {
+                i2.update(|v| {
+                    let n = v.iter().max().copied().unwrap_or(0) + 1;
+                    v.push(n)
+                })
+            }),
+            button("Remove").on_activate(move || {
+                i3.update(|v| {
+                    v.pop();
+                })
+            }),
+            row(for_each(
+                items.get(),
+                |n| *n,
+                |n| {
+                    button(format!("Item {n}"))
+                        .transition(Transition::Scale)
+                        .animation(Animation::Snappy)
+                },
+            ))
+            .spacing(8.0),
+        ))
+        .spacing(12.0);
+        let disclosure = disclosure_group(
+            "More options",
+            &expanded.binding(),
+            column((
+                label("Hidden until expanded"),
+                checkbox("Another", &on.binding()),
+            ))
+            .spacing(8.0),
+        );
+
+        column((
+            row((
+                button("Quit")
+                    .style(0)
+                    .id("quit")
+                    .on_activate(vetro::kit::quit),
+                label("Vetro Gallery").text_style("Title 2"),
+                spacer(),
+                button("Open Sheet").on_activate(move || s2.set(true)),
+            ))
+            .spacing(16.0)
+            .fill_width(),
+            section("Buttons", buttons),
+            section("Toggles", toggles),
+            section("Sliders and steppers", values),
+            section("Progress", progress_row),
+            section("Choices", choices),
+            section("Fields", fields),
+            section("Animated list", list),
+            section("Disclosure", disclosure),
+            text_view("A text view for documents of any size.\nType here.")
+                .height(80.0)
+                .fill_width(),
+        ))
+        .spacing(18.0)
+        .alignment(0)
+        .padding(24.0)
+        .fill()
+        .align(0)
+        .context_menu(vec![
+            MenuEntry::item("Toggle Appearance", || {
+                let _ = vetro::kit::set_dark(!vetro::kit::is_dark());
+            }),
+            MenuEntry::separator(),
+            MenuEntry::item("Quit", vetro::kit::quit).shortcut("cmd+q"),
+        ])
+        .sheet(&sheet.binding(), (360.0, 160.0), {
+            let s3 = sheet.clone();
+            move || {
+                let s4 = s3.clone();
+                column((
+                    label("A sheet").text_style("Title 3"),
+                    label("Attached to the gallery window."),
+                    button("Done")
+                        .style(0)
+                        .default_action()
+                        .on_activate(move || s4.set(false)),
+                ))
+                .spacing(12.0)
+                .padding(20.0)
+            }
+        })
+    }
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
-    if let Err(e) = vetro_lib::platform::run("dev.silica.VetroGallery", build) {
+    let menus = || -> vetro::kit::Result<()> {
+        let app = vetro::kit::Menu::new("Vetro Gallery", Some("app"))?
+            .item("About Vetro Gallery", None, 1, 0)?
+            .separator()?
+            .item("Quit Vetro Gallery", Some("cmd+q"), 2, 0)?;
+        let view = vetro::kit::Menu::new("View", None)?.item(
+            "Toggle Appearance",
+            Some("cmd+shift+d"),
+            3,
+            0,
+        )?;
+        let window = vetro::kit::Menu::new("Window", Some("window"))?;
+        vetro::kit::set_menu_bar(vec![app, view, window], |id| match id {
+            2 => vetro::kit::quit(),
+            3 => {
+                let _ = vetro::kit::set_dark(!vetro::kit::is_dark());
+            }
+            _ => {}
+        })
+    };
+    let r = vetro::kit::run("dev.silica.VetroGallery", move || {
+        let _ = menus();
+        if let Ok(root) = vetro::window("Vetro Gallery", (900.0, 760.0), || Gallery) {
+            // The window lives as long as the process.
+            std::mem::forget(root);
+        }
+    });
+    if let Err(e) = r {
         eprintln!("vetro-gallery: {e}");
         std::process::exit(1);
     }

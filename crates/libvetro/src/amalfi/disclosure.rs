@@ -362,6 +362,11 @@ impl Widget for DisclosureGroup {
         "DisclosureGroup"
     }
 
+    fn clips_children(&self) -> bool {
+        // The content slides in and out under the header.
+        true
+    }
+
     fn measure(&mut self, cx: &mut LayoutCx<'_>, p: Proposal) -> Size {
         let w = match p.width {
             Some(w) if w.is_finite() => w,

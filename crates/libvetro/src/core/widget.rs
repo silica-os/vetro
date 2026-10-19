@@ -156,6 +156,12 @@ pub trait Widget: AsAny {
     /// spinner).
     fn attached(&mut self, _cx: &mut EventCx<'_>) {}
 
+    /// Whether the children are clipped to the view's bounds (a collapsing group, a scroll
+    /// view), whatever `Prop::ClipsChildren` says.
+    fn clips_children(&self) -> bool {
+        false
+    }
+
     /// Whether the core dims the whole view when it is disabled (Amalfi: 35 %).
     fn dims_when_disabled(&self) -> bool {
         true

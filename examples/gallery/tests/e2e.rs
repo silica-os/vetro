@@ -124,8 +124,7 @@ fn gallery_in_ossido_headless() {
             .unwrap_or(0.0)
     };
     let (x, y) = (num("x"), num("y"));
-    // `window.list` gives the content's origin; the Quit button is the last row of the
-    // column (padding 24, four rows of buttons and their spacing above it).
+    // `window.list` gives the content's origin; Quit is the first button (padding 24).
     let click = |dx: f32, dy: f32| {
         ctl(&[
             "input.click",
@@ -133,7 +132,7 @@ fn gallery_in_ossido_headless() {
             &format!("y={}", y + dy),
         ]);
     };
-    click(52.0, 206.0);
+    click(52.0, 38.0);
     let start = Instant::now();
     loop {
         if gallery.0.try_wait().unwrap().is_some() {

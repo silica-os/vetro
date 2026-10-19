@@ -166,3 +166,59 @@ fn sheets_open_from_state() {
     rt.advance(0.01);
     assert_eq!(shown.get(), 1, "the sheet's content rendered once");
 }
+
+struct Form;
+
+impl Component for Form {
+    fn body(&self, cx: &mut Cx) -> Element {
+        let on = cx.state(|| false);
+        let level = cx.state(|| 0.5f64);
+        let name = cx.state(String::new);
+        let seg = cx.state(|| 1usize);
+        column((
+            checkbox("Enabled", &on.binding()).id("check"),
+            switch(&on.binding()).id("switch"),
+            slider(&level.binding(), 0.0, 1.0).id("slider"),
+            text_field("Name", &name.binding()).id("name"),
+            segmented(&["One", "Two", "Three"], &seg.binding()).id("seg"),
+            progress(Some(level.get())),
+            spinner(),
+            label(format!(
+                "{} {:.1} {} {}",
+                on.get(),
+                level.get(),
+                name.get(),
+                seg.get()
+            ))
+            .id("summary"),
+        ))
+        .spacing(8.0)
+    }
+}
+
+#[test]
+fn controls_bind_state() {
+    let rt = Headless::new().unwrap();
+    let root = mount(host(), || Form);
+    let summary = root.host().find("summary").unwrap();
+    assert_eq!(summary.get_str(Prop::TEXT).unwrap(), "false 0.5  1");
+    // Clicking the checkbox writes the binding; the switch follows on the next render.
+    root.host().find("check").unwrap().click().unwrap();
+    rt.advance(0.01);
+    assert_eq!(summary.get_str(Prop::TEXT).unwrap(), "true 0.5  1");
+    assert!(
+        root.host()
+            .find("switch")
+            .unwrap()
+            .get_bool(Prop::VALUE)
+            .unwrap()
+    );
+    assert_eq!(
+        root.host()
+            .find("seg")
+            .unwrap()
+            .get_int(Prop::SELECTED_INDEX)
+            .unwrap(),
+        1
+    );
+}

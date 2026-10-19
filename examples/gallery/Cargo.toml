@@ -12,8 +12,7 @@ name = "vetro-gallery"
 path = "src/main.rs"
 
 [dependencies]
-libvetro = { path = "../../crates/libvetro" }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+vetro = { path = "../../crates/vetro" }
 
 [lints]
 workspace = true

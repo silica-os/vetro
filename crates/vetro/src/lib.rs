@@ -31,6 +31,7 @@
 //! renders, as with hooks). Any state change schedules one re-render of the root on the next
 //! turn of the loop; the reconciler makes it cheap.
 
+pub mod controls;
 mod element;
 mod reconcile;
 
@@ -47,10 +48,11 @@ pub use vetro_kit as kit;
 
 /// Everything an app needs.
 pub mod prelude {
+    pub use crate::controls::*;
     pub use crate::{
         Animation, Binding, Component, Cx, Element, MenuEntry, Model, State, Transition, button,
         column, component, custom, for_each, grid, group, host, label, overlay, row, spacer,
-        symbol, view,
+        symbol, text_view, view,
     };
     pub use vetro_kit::{Color, Signal, Value, rgba};
 }

@@ -1013,7 +1013,17 @@ impl Platform {
             canvas.restore();
         });
         if let Err(e) = result {
-            tracing::warn!("Vulkan frame: {e}");
+            // A Vulkan that cannot present here (no dmabuf import in the compositor, a lost
+            // surface): fall back to GL for the process, once (never retried in a loop).
+            tracing::warn!("Vulkan frame: {e}: falling back to GL");
+            let w = s.vkw.take();
+            s.frame_pending = false;
+            s.wants_frame = true;
+            if let Some(w) = w {
+                ctx.destroy_window(w);
+            }
+            self.renderer = Renderer::Gl;
+            return false;
         }
         s.frame_pending = true;
         s.wants_frame = self.ui.is_animating();
