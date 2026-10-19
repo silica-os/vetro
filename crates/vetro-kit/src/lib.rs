@@ -655,6 +655,28 @@ impl View {
     }
 }
 
+/// A font for custom drawing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Font {
+    /// Family (`None`: Inter).
+    pub family: Option<String>,
+    /// Size in points.
+    pub size: f32,
+    /// CSS weight.
+    pub weight: u32,
+}
+
+impl Font {
+    /// Inter at `size`, regular.
+    pub fn ui(size: f32) -> Font {
+        Font {
+            family: None,
+            size,
+            weight: 400,
+        }
+    }
+}
+
 /// A canvas inside a custom view's draw callback.
 pub struct Canvas {
     ptr: *mut sys::VetroCanvas,
@@ -691,28 +713,28 @@ impl Canvas {
         unsafe { f::vetro_canvas_line(self.ptr, x0, y0, x1, y1, width, c) };
     }
 
-    /// Draws text with its top left at (x, y).
-    pub fn text(
-        &self,
-        x: f32,
-        y: f32,
-        text: &str,
-        family: Option<&str>,
-        size: f32,
-        weight: u32,
-        c: Color,
-    ) {
-        let (Ok(t), fam) = (cstring(text), family.map(cstring)) else {
-            return;
-        };
-        let fam = match fam {
+    /// Draws text with its top left at `origin`.
+    pub fn text(&self, origin: (f32, f32), text: &str, font: &Font, c: Color) {
+        let Ok(t) = cstring(text) else { return };
+        let fam = match font.family.as_deref().map(cstring) {
             Some(Ok(s)) => Some(s),
             Some(Err(_)) => return,
             None => None,
         };
         let fp = fam.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
         // SAFETY: as above; the strings live for the call.
-        unsafe { f::vetro_canvas_text(self.ptr, x, y, t.as_ptr(), fp, size, weight, c) };
+        unsafe {
+            f::vetro_canvas_text(
+                self.ptr,
+                origin.0,
+                origin.1,
+                t.as_ptr(),
+                fp,
+                font.size,
+                font.weight,
+                c,
+            )
+        };
     }
 
     /// Draws a Silica Symbols glyph in a box (font size = box height).
