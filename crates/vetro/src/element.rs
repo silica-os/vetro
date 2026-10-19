@@ -480,6 +480,12 @@ pub fn button(title: impl AsRef<str>) -> Element {
     Element::of(Kind::PUSH_BUTTON).prop(Prop::TITLE, PValue::Str(Rc::from(title.as_ref())))
 }
 
+/// A multi-line text view (documents of any size); its text is set once and then edited by
+/// the user: read it back with [`Element::on`] `TEXT_CHANGED`.
+pub fn text_view(initial: impl AsRef<str>) -> Element {
+    Element::of(Kind::TEXT_VIEW).prop(Prop::TEXT, PValue::Str(Rc::from(initial.as_ref())))
+}
+
 /// A view of any kind (for components without a builder yet).
 pub fn view(kind: Kind) -> Element {
     Element::of(kind)

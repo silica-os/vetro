@@ -26,6 +26,10 @@ pub fn make(kind: u32) -> Option<Box<dyn Widget>> {
         VETRO_KIND_LABEL => Box::new(Label::new("")),
         VETRO_KIND_SYMBOL => Box::new(SymbolImage::new("questionmark-circle")),
         VETRO_KIND_PUSH_BUTTON => Box::new(PushButton::new("")),
+        VETRO_KIND_TEXT_VIEW => Box::new(crate::text::view::TextView::new(
+            "",
+            crate::text::TextStyle::default(),
+        )),
         _ => return None,
     })
 }

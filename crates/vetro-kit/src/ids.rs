@@ -139,4 +139,5 @@ impl Kind {
     pub const LABEL: Kind = Kind(sys::VETRO_KIND_LABEL);
     pub const SYMBOL: Kind = Kind(sys::VETRO_KIND_SYMBOL);
     pub const PUSH_BUTTON: Kind = Kind(sys::VETRO_KIND_PUSH_BUTTON);
+    pub const TEXT_VIEW: Kind = Kind(sys::VETRO_KIND_TEXT_VIEW);
 }

@@ -129,6 +129,8 @@ pub struct Editor {
     pub max_chars: Option<usize>,
     /// The x the caret keeps while moving up and down.
     goal_x: Option<f32>,
+    /// The span changed since [`Editor::take_change`]: start, old end, new end.
+    changed: Option<(usize, usize, usize)>,
 }
 
 impl Default for Editor {
@@ -157,6 +159,7 @@ impl Editor {
             single_line,
             max_chars: None,
             goal_x: None,
+            changed: None,
         }
     }
 
@@ -197,13 +200,40 @@ impl Editor {
 
     /// Replaces the whole text (not undoable: a programmatic change); the caret goes to the
     /// end.
+    /// Replaces `range` and records the change.
+    fn splice(&mut self, range: Range<usize>, text: &str) {
+        let (a, b) = (range.start, range.end);
+        let len = text.len();
+        self.text.replace_range(range, text);
+        // Merge with the changes not yet taken, in current coordinates.
+        self.changed = Some(match self.changed {
+            None => (a, b, a + len),
+            Some((s, oe, ne)) => {
+                let delta = ne as isize - oe as isize;
+                let start = s.min(a);
+                let end_cur = ne.max(b);
+                let old_end = (end_cur as isize - delta).max(start as isize) as usize;
+                let new_end = (end_cur as isize + len as isize - (b - a) as isize)
+                    .max(start as isize) as usize;
+                (start, old_end.max(oe), new_end)
+            }
+        });
+    }
+
+    /// The span changed since the last call (start, old end, new end), if any.
+    pub fn take_change(&mut self) -> Option<(usize, usize, usize)> {
+        self.changed.take()
+    }
+
     pub fn set_text(&mut self, text: &str) {
         let text = if self.single_line {
             text.replace(['\n', '\r'], " ")
         } else {
             text.to_string()
         };
+        let old_len = self.text.len();
         self.text = text;
+        self.changed = Some((0, old_len, self.text.len()));
         self.selection = Selection::caret(self.text.len());
         self.preedit = None;
         self.undo.clear();
@@ -468,7 +498,7 @@ impl Editor {
             return;
         }
         let before = self.selection;
-        self.text.replace_range(range.clone(), &inserted);
+        self.splice(range.clone(), &inserted);
         let caret = range.start + inserted.len();
         self.selection = Selection::caret(caret);
         let change = Change {
@@ -537,8 +567,9 @@ impl Editor {
             if self.text.is_char_boundary(c.at)
                 && self.text.is_char_boundary(end.min(self.text.len()))
             {
-                self.text
-                    .replace_range(c.at..end.min(self.text.len()), &c.removed);
+                let r = c.at..end.min(self.text.len());
+                let removed = c.removed.clone();
+                self.splice(r, &removed);
             }
             self.selection = c.before;
         }
@@ -555,7 +586,8 @@ impl Editor {
         for c in &group {
             let end = (c.at + c.removed.len()).min(self.text.len());
             if self.text.is_char_boundary(c.at) && self.text.is_char_boundary(end) {
-                self.text.replace_range(c.at..end, &c.inserted);
+                let ins = c.inserted.clone();
+                self.splice(c.at..end, &ins);
             }
             self.selection = c.after;
         }
@@ -809,6 +841,24 @@ mod tests {
         e.move_caret(Movement::Up, false, Some(&layout));
         // Back on the first line at the column it started from.
         assert_eq!(e.selection().focus, 10);
+    }
+
+    #[test]
+    fn changes_are_tracked_and_merged() {
+        let mut e = Editor::new("hello world", false);
+        e.take_change();
+        e.set_selection(Selection::caret(5));
+        e.insert("!", 0.0);
+        assert_eq!(e.take_change(), Some((5, 5, 6)));
+        e.insert("a", 0.0);
+        e.set_selection(Selection::caret(0));
+        e.insert("b", 0.0);
+        // "b" at 0 and "a" at 7 (old 6): the span covers both.
+        assert_eq!(e.take_change(), Some((0, 6, 8)));
+        assert_eq!(e.text(), "bhello!a world");
+        e.undo();
+        assert!(e.take_change().is_some());
+        assert_eq!(e.take_change(), None);
     }
 
     #[test]

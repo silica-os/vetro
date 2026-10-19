@@ -248,6 +248,7 @@ typedef void (*VetroMenuFn)(uint32_t id, void *user);
 #define VETRO_KIND_LABEL 7u
 #define VETRO_KIND_SYMBOL 8u
 #define VETRO_KIND_PUSH_BUTTON 9u
+#define VETRO_KIND_TEXT_VIEW 10u
 
 /* Window kinds. */
 #define VETRO_WINDOW_NORMAL 1u

@@ -40,7 +40,7 @@ use std::rc::{Rc, Weak};
 
 pub use element::{
     Component, Element, Handler, IntoChildren, Key, PValue, button, column, component, custom,
-    for_each, grid, group, host, label, overlay, row, spacer, symbol, view,
+    for_each, grid, group, host, label, overlay, row, spacer, symbol, text_view, view,
 };
 pub use vetro_kit as kit;
 
