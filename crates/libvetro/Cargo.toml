@@ -26,6 +26,8 @@ wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
 silica-protocols = { git = "https://github.com/silica-os/silica-desktop", rev = "084363dc6770dbdd1d2642f45c4b44f7361ac026", features = ["client"] }
 serde_json = "1"
+khronos-egl = { version = "6", default-features = false, features = ["1_5", "dynamic"] }
+wayland-egl = "0.32"
 rustix = { version = "1", features = ["fs", "pipe"] }
 
 [lints]

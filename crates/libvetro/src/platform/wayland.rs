@@ -107,7 +107,27 @@ struct Surface {
     frame_pending: bool,
     wants_frame: bool,
     pool: Option<SlotPool>,
+    gl: Option<crate::render::gl::GlWindow>,
     last_frame: Instant,
+}
+
+/// The renderer chosen for this process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Renderer {
+    /// Skia on GLES through EGL.
+    Gl,
+    /// Skia raster into shared-memory buffers.
+    Software,
+}
+
+impl Renderer {
+    /// `VETRO_RENDERER` (`gl`, `software`); GL by default, software when GL fails.
+    fn from_env() -> Renderer {
+        match std::env::var("VETRO_RENDERER").as_deref() {
+            Ok("software") | Ok("shm") => Renderer::Software,
+            _ => Renderer::Gl,
+        }
+    }
 }
 
 /// Key repeat state (client side: Wayland compositors send rate and delay only).
@@ -157,6 +177,8 @@ pub struct Platform {
     text_input_pending: TextInputPending,
     text_input_enabled: bool,
     cursor: Cursor,
+    renderer: Renderer,
+    gl: Option<crate::render::gl::GlContext>,
     app_id: String,
     had_windows: bool,
     start: Instant,
@@ -260,6 +282,8 @@ impl Platform {
             text_input_pending: TextInputPending::default(),
             text_input_enabled: false,
             cursor: Cursor::Default,
+            renderer: Renderer::from_env(),
+            gl: None,
             had_windows: false,
             start: Instant::now(),
             last_tick: Instant::now(),
@@ -537,6 +561,7 @@ impl Platform {
             frame_pending: false,
             wants_frame: true,
             pool: None,
+            gl: None,
             last_frame: Instant::now(),
         });
     }
@@ -549,6 +574,9 @@ impl Platform {
             }
             if let Some(v) = s.viewport {
                 v.destroy();
+            }
+            if let (Some(ctx), Some(w)) = (self.gl.as_mut(), s.gl) {
+                ctx.destroy_window(w);
             }
             drop(s.role);
         }
@@ -587,6 +615,9 @@ impl Platform {
             self.ui.advance(dt.min(0.1));
         }
         let damage = self.ui.prepare_frame(id);
+        if self.renderer == Renderer::Gl && self.render_gl(id, damage) {
+            return;
+        }
         let Some(s) = self.surfaces.iter_mut().find(|s| s.id == id) else {
             return;
         };
@@ -652,6 +683,87 @@ impl Platform {
         s.frame_pending = true;
         s.wants_frame = self.ui.is_animating();
         s.last_frame = now;
+    }
+
+    /// Renders with GL; false when GL is unavailable (the caller falls back to shm).
+    fn render_gl(&mut self, id: WindowId, damage: Rect) -> bool {
+        let Some(wl) = self.surface(id).map(|s| s.role.wl_surface().clone()) else {
+            return false;
+        };
+        if self.gl.is_none() {
+            let ptr = self.conn.backend().display_ptr().cast::<std::ffi::c_void>();
+            match crate::render::gl::GlContext::new(ptr, &wl) {
+                Ok(ctx) => {
+                    tracing::info!("renderer: Skia GL on {}", ctx.renderer());
+                    self.gl = Some(ctx);
+                }
+                Err(e) => {
+                    tracing::warn!("GL unavailable ({e}): rendering in software");
+                    self.renderer = Renderer::Software;
+                    return false;
+                }
+            }
+        }
+        let Some(ctx) = self.gl.as_mut() else {
+            return false;
+        };
+        let Some(s) = self.surfaces.iter_mut().find(|s| s.id == id) else {
+            return false;
+        };
+        let scale = s.scale.max(0.5);
+        let px = (
+            (s.size.width * scale).round().max(1.0) as i32,
+            (s.size.height * scale).round().max(1.0) as i32,
+        );
+        if s.gl.is_none() {
+            match ctx.create_window(&wl, px) {
+                Ok(w) => s.gl = Some(w),
+                Err(e) => {
+                    tracing::warn!("GL window: {e}");
+                    return false;
+                }
+            }
+        }
+        let Some(glw) = s.gl.as_mut() else {
+            return false;
+        };
+        if let Some(vp) = &s.viewport {
+            vp.set_destination(s.size.width.round() as i32, s.size.height.round() as i32);
+        } else {
+            wl.set_buffer_scale(scale.round().max(1.0) as i32);
+        }
+        let device_damage = if damage.is_empty() {
+            Rect::new(0.0, 0.0, px.0 as f32, px.1 as f32)
+        } else {
+            Rect::new(
+                damage.x * scale,
+                damage.y * scale,
+                damage.width * scale,
+                damage.height * scale,
+            )
+            .round_out(1.0)
+        };
+        wl.frame(&self.qh, wl.clone());
+        let ui = &self.ui;
+        let result = ctx.render(glw, px, device_damage, |canvas, repaint| {
+            canvas.save();
+            let logical_clip = repaint.map(|r| {
+                canvas.clip_rect(r.to_sk(), skia_safe::ClipOp::Intersect, false);
+                Rect::new(r.x / scale, r.y / scale, r.width / scale, r.height / scale)
+                    .round_out(scale)
+            });
+            canvas.clear(skia_safe::Color::TRANSPARENT);
+            canvas.scale((scale, scale));
+            ui.paint_window(id, canvas, logical_clip);
+            canvas.restore();
+        });
+        if let Err(e) = result {
+            tracing::warn!("GL frame: {e}");
+        }
+        s.frame_pending = true;
+        s.wants_frame = self.ui.is_animating();
+        s.last_frame = Instant::now();
+        true
     }
 
     fn apply_cursor(&self) {
