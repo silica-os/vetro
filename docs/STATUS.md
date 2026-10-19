@@ -50,6 +50,30 @@ Gate (real exit codes): `cargo fmt --check && cargo clippy --all-targets -- -D w
 - **Stale handles are safe**: generational ids; every operation on a destroyed view is a
   no-op or `Error::NoSuchObject`.
 
+## Components
+
+Each family: widgets in `crates/libvetro/src/amalfi/<family>.rs`, parity test in
+`crates/vetro-test/tests/<family>.rs` (every master of the family, geometry exact, pixels with
+a named tolerance, text masked), behaviour unit tests in the module. Kit defects and the
+deviations they cause are in [kit-issues.md](kit-issues.md).
+
+| Family | Widgets | Masters | State |
+| --- | --- | --- | --- |
+| Toggles | `Toggle` (checkbox, radio), `Switch`, `toggle_group` | 296 | done |
+| Tooltips | `Tooltip`, `place`, hover presenter in `Ui` | 14 | done (placement by position; pixels of `Placement` wait for the round icon button) |
+| Segments | `SegmentedControl`, `ActionSegments`, `PaneControl`, `SegmentItem` | 530 | done (Dark Icon + Label: geometry only) |
+| Sliders | `Slider`, `Dial`, `SliderThumb`, `LensThumb` | 64 | done |
+| Steppers | `Stepper`, `stepper_with_field` | 68 | done |
+| Progress | `ProgressBar`, `CircularProgress`, `Spinner` | 84 | done |
+| Disclosure | `Disclosure`, `DisclosureGroup` | 44 | done |
+| Fields | `TextField` (text, secure, area, search, tokens, combo, value), `Token`, `ClearButton`, `ComboButton` | 126 of 128 | partial: `Combo Box/Open` (the list is a menu) waits for Menus |
+
+Shared changes made on the way: the harness expands nested symbol masters (path-addressed
+layers, instance text overrides applied in order) and walks groups; `Scene` has
+`auto_geometry_except`, `extra_mask`, `png_margin`, `hover_at`, `press_at`; `Recorder` has
+`glyph_sized`; `Widget::attached` lets a view start animations on its own; `Ui::set` restarts
+ticking; the tooltip presenter is part of `Ui`; `Text` has a wrapping paragraph mode.
+
 ## Next
 
 1. Text editing engine (selection, movement, undo, IME preedit) and text field widgets.
