@@ -318,6 +318,10 @@ pub struct Platform {
     menu_manager: Option<SilicaMenuManagerV1>,
     /// Ossido's shell channel (the shell process only, [`Ui::connect_shell`]).
     shell: Option<SilicaShellManagerV1>,
+    /// Thumbnails asked for and not arrived yet: the window and the file Ossido writes into.
+    thumbnails: Vec<(String, std::fs::File)>,
+    /// The window under a drag of another app's data.
+    dnd_window: Option<WindowId>,
     /// The windows of the session (ext-foreign-toplevel-list, shell process only).
     toplevels: Option<ExtForeignToplevelListV1>,
     /// What each window handle said so far: identifier, app id, title.
@@ -607,6 +611,8 @@ impl Platform {
             pointer: None,
             cursor_device: None,
             text_input: None,
+            thumbnails: Vec::new(),
+            dnd_window: None,
             data_device: None,
             copy_source: None,
             keyboard_focus: None,
@@ -807,6 +813,14 @@ impl Platform {
                     s.role
                         .wl_surface()
                         .set_input_region(wl_region.as_ref().map(|r| r.wl_region()));
+                    s.wants_frame = true;
+                }
+            }
+            Request::SetExclusiveZone(id, zone) => {
+                if let Some(s) = self.surface_mut(id) {
+                    if let Role::Layer(l) = &s.role {
+                        l.set_exclusive_zone(zone);
+                    }
                     s.wants_frame = true;
                 }
             }
@@ -1984,6 +1998,37 @@ impl Platform {
                     m.activate_menu_item(serial, id);
                 }
             }
+            R::Thumbnail(identifier) => {
+                if m.version() < 2 || identifier.is_empty() {
+                    return;
+                }
+                // An unlinked file of 256 × 256 × 4 bytes in the runtime folder.
+                let dir = std::env::var_os("XDG_RUNTIME_DIR")
+                    .map_or_else(std::env::temp_dir, std::path::PathBuf::from);
+                let path = dir.join(format!(
+                    "vetro-thumbnail-{}-{}",
+                    std::process::id(),
+                    self.thumbnails.len()
+                ));
+                let file = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(&path)
+                    .and_then(|f| {
+                        f.set_len(256 * 256 * 4)?;
+                        Ok(f)
+                    });
+                let _ = std::fs::remove_file(&path);
+                match file {
+                    Ok(f) => {
+                        m.thumbnail(identifier.clone(), std::os::fd::AsFd::as_fd(&f));
+                        self.thumbnails.push((identifier, f));
+                    }
+                    Err(e) => tracing::warn!("thumbnail file: {e}"),
+                }
+            }
         }
     }
 }
@@ -2010,6 +2055,31 @@ impl Dispatch<SilicaShellManagerV1, ()> for Platform {
                 minimized: minimized != 0,
             },
             W::Broadcast { topic, value } => E::Broadcast { topic, value },
+            W::Thumbnail {
+                identifier,
+                width,
+                height,
+            } => {
+                use std::io::{Read, Seek};
+                let Some(i) = state.thumbnails.iter().position(|t| t.0 == identifier) else {
+                    return;
+                };
+                let (_, mut file) = state.thumbnails.remove(i);
+                let ok = width > 0 && height > 0 && width <= 256 && height <= 256;
+                let mut rgba = Vec::new();
+                if ok {
+                    let len = u64::from(width) * u64::from(height) * 4;
+                    let _ = file.seek(std::io::SeekFrom::Start(0));
+                    let _ = (&mut file).take(len).read_to_end(&mut rgba);
+                }
+                let full = ok && rgba.len() as u64 == u64::from(width) * u64::from(height) * 4;
+                E::Thumbnail {
+                    identifier,
+                    width: if full { width } else { 0 },
+                    height: if full { height } else { 0 },
+                    rgba: if full { rgba } else { Vec::new() },
+                }
+            }
             W::WindowMenu { identifier, x, y } => E::WindowMenu {
                 identifier,
                 at: crate::geom::Point::new(x as f32, y as f32),
@@ -2490,12 +2560,32 @@ impl DataDeviceHandler for Platform {
         let actions = wayland_client::protocol::wl_data_device_manager::DndAction::Copy;
         if mime.is_some() {
             offer.set_actions(actions, actions);
+            self.dnd_window = self.window_of(&offer.surface);
+            if let Some(w) = self.dnd_window {
+                self.ui
+                    .drag_motion(w, Some(Point::new(offer.x as f32, offer.y as f32)));
+            }
         }
     }
 
-    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {
+        if let Some(w) = self.dnd_window.take() {
+            self.ui.drag_motion(w, None);
+        }
+    }
 
-    fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, _: f64, _: f64) {}
+    fn motion(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &WlDataDevice,
+        x: f64,
+        y: f64,
+    ) {
+        if let Some(w) = self.dnd_window {
+            self.ui.drag_motion(w, Some(Point::new(x as f32, y as f32)));
+        }
+    }
 
     fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
 

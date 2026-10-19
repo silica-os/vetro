@@ -27,6 +27,18 @@ pub enum ShellEvent {
     Focused(String),
     /// A catalog command for the shell (`faro.toggle` …).
     Command(String),
+    /// The thumbnail of a minimized window asked with [`ShellRequest::Thumbnail`]: premultiplied
+    /// RGBA rows from the top (empty, 0 × 0, when the window has none).
+    Thumbnail {
+        /// The window.
+        identifier: String,
+        /// Width in pixels.
+        width: u32,
+        /// Height in pixels.
+        height: u32,
+        /// The pixels.
+        rgba: Vec<u8>,
+    },
     /// A window was minimized (true) or restored.
     Minimized {
         /// Its identifier.
@@ -87,6 +99,8 @@ pub enum ShellRequest {
     Broadcast(String, String),
     /// Chooses an item of an app's menu.
     ActivateMenuItem(u32, u32),
+    /// Asks for the thumbnail of a minimized window (answered by [`ShellEvent::Thumbnail`]).
+    Thumbnail(String),
 }
 
 impl Ui {

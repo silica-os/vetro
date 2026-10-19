@@ -308,6 +308,13 @@ pub enum Event {
     FocusOut,
     /// A clipboard paste of text.
     Paste(String),
+    /// Another app's data is dragged over the view (view coordinates).
+    DragOver {
+        /// Position.
+        pos: Point,
+    },
+    /// The drag left the view (or was dropped elsewhere or cancelled).
+    DragLeave,
     /// Files or text dropped (URIs or text).
     Drop {
         /// Position.

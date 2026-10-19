@@ -103,6 +103,8 @@ pub enum Request {
     SetToolbarHeight(WindowId, f32),
     /// The part of the window that takes pointer input (window coordinates; `None`: all of it).
     SetInputRegion(WindowId, Option<Vec<Rect>>),
+    /// A shell surface's exclusive zone changed.
+    SetExclusiveZone(WindowId, i32),
     /// Join Ossido's shell channel.
     ConnectShell,
     /// A request on the shell channel.
@@ -219,6 +221,8 @@ pub struct Ui {
     requests: Vec<Request>,
     /// Monotonic time in seconds (set by the platform, or by tests).
     pub now: f64,
+    /// The view under a drag of another app's data.
+    drag_target: Option<ViewId>,
     animating: Vec<ViewId>,
     pub(crate) node_anims: Vec<ViewId>,
     timers: Vec<Timer>,
@@ -269,6 +273,7 @@ impl Ui {
             next_handler: 1,
             requests: Vec::new(),
             now: 0.0,
+            drag_target: None,
             animating: Vec::new(),
             node_anims: Vec::new(),
             timers: Vec::new(),
@@ -1084,6 +1089,17 @@ impl Ui {
                 .collect()
         });
         self.requests.push(Request::SetInputRegion(window, region));
+    }
+
+    /// Changes a shell surface's exclusive zone (the room the compositor keeps for it; 0 for
+    /// none, as a Dock that hides itself).
+    pub fn set_exclusive_zone(&mut self, window: WindowId, zone: i32) {
+        if let Some(w) = self.window_mut(window)
+            && let WindowKind::Shell { exclusive, .. } = &mut w.kind
+        {
+            *exclusive = zone;
+        }
+        self.requests.push(Request::SetExclusiveZone(window, zone));
     }
 
     /// Lays out and records every window again (the fonts changed).
@@ -1911,8 +1927,34 @@ impl Ui {
         self.request(Request::InhibitIdle(window, on));
     }
 
-    /// Items dropped at `pos`.
+    /// A drag of another app's data moved to `pos` over `window` (`None`: it left): the view
+    /// under it gets [`Event::DragOver`], the one it left [`Event::DragLeave`].
+    pub fn drag_motion(&mut self, window: WindowId, pos: Option<Point>) {
+        let target = pos.and_then(|p| self.hit_test(window, p).map(|(t, _)| (t, p)));
+        let previous = self.drag_target.take();
+        if let Some(prev) = previous
+            && target.map(|t| t.0) != Some(prev)
+            && self.tree.contains(prev)
+        {
+            self.send_bubbling(prev, &Event::DragLeave);
+        }
+        if let Some((t, p)) = target {
+            let ev = Event::DragOver {
+                pos: p - self.tree.window_origin(t),
+            };
+            self.send_bubbling(t, &ev);
+            self.drag_target = Some(t);
+        }
+        self.flush();
+    }
+
+    /// Files or text dropped at `pos` of `window`.
     pub fn drop_items(&mut self, window: WindowId, pos: Point, items: Vec<String>) {
+        if let Some(prev) = self.drag_target.take()
+            && self.tree.contains(prev)
+        {
+            self.send_bubbling(prev, &Event::DragLeave);
+        }
         if let Some((target, _)) = self.hit_test(window, pos) {
             let ev = Event::Drop {
                 pos: pos - self.tree.window_origin(target),
