@@ -35,3 +35,12 @@ test that names it, until the kit is fixed.
   carry, so every chip's fill but the accent one is named as a deviation.
 - **Icon + Label buttons, pop-up and pull-down `Open`, `Pop-up/App`**: not covered yet (menus,
   app icons).
+
+## Menus and open pop-up buttons
+
+- `Buttons/Pop-up/Open` and `Buttons/Pull-down/Open`: the Menu layer is above the Button and the
+  kit's glass hides the button completely; with a real glass blur the button shows through as a
+  ghost. Geometry matches; pixels are not compared.
+- `Menus/Menu`: two `Separator/Rest/Line` layers share one name, so their layer path is
+  ambiguous; geometry skips them (the `Item/Separator` masters cover them).
+- `Menus/Item/App` and `Buttons/Pop-up/App` need app icons: not implemented.

@@ -215,8 +215,9 @@ impl Scene {
                 continue;
             };
             // A text overridden in an instance keeps the width of the master's default text.
-            let kr = if kl.text_overridden {
-                Rect::new(kr.x, kr.y, ol.frame.width, kr.height)
+            let kr = if kl.text_overridden || kl.inexact_x {
+                let x = if kl.inexact_x { ol.frame.x } else { kr.x };
+                Rect::new(x, kr.y, ol.frame.width, kr.height)
             } else {
                 kr
             };

@@ -7,6 +7,7 @@ pub mod fields;
 pub mod forms;
 pub mod foundation;
 pub mod group_box;
+pub mod menus;
 pub mod progress;
 pub mod scrollbars;
 pub mod segments;

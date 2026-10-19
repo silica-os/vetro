@@ -12,7 +12,8 @@ use crate::color::Color;
 use crate::core::a11y::{A11y, Action, Role};
 use crate::core::event::{Button, Event, Handled, Key};
 use crate::core::layout::Proposal;
-use crate::core::tree::NodeFlags;
+use crate::core::tree::{NodeFlags, ViewId};
+use crate::core::ui::Ui;
 use crate::core::value::{Prop, Signal, Value};
 use crate::core::widget::{EventCx, FocusKind, Interaction, LayoutCx, PaintCx, PropChange, Widget};
 use crate::geom::{Corners, Point, Rect, Size};
@@ -888,6 +889,7 @@ pub struct MenuButton {
     pub width: Option<f32>,
     /// The list is open (the button looks pressed).
     pub open: bool,
+    popup: Option<crate::core::window::WindowId>,
     core: Core,
     text: Label,
 }
@@ -903,6 +905,7 @@ impl MenuButton {
             size: ControlSize::Regular,
             width: None,
             open: false,
+            popup: None,
             core: Core::default(),
             text: Label::default(),
         }
@@ -918,6 +921,7 @@ impl MenuButton {
             size: ControlSize::Regular,
             width: None,
             open: false,
+            popup: None,
             core: Core::default(),
             text: Label::default(),
         }
@@ -972,17 +976,83 @@ impl MenuButton {
         }
     }
 
-    /// The menu chose item `i` (a pop-up takes it as its label).
-    pub fn choose(&mut self, cx: &mut EventCx<'_>, i: usize) {
-        if i >= self.items.len() {
+    /// The menu of `id` chose item `i`: a pop-up takes it as its label; the menu closes.
+    pub fn choose_in(ui: &mut Ui, id: ViewId, i: usize) {
+        let mut closing = None;
+        let ok = ui
+            .with_widget::<MenuButton, _>(id, |b| {
+                if i >= b.items.len() {
+                    return false;
+                }
+                if b.pop_up {
+                    b.selected = Some(i);
+                }
+                b.open = false;
+                closing = b.popup.take();
+                true
+            })
+            .unwrap_or(false);
+        if let Some(w) = closing {
+            ui.close_window(w);
+        }
+        if ok {
+            ui.emit(id, Signal::SelectionChanged, Value::Int(i as i64));
+            ui.emit(id, Signal::ExpandedChanged, Value::Bool(false));
+        }
+    }
+
+    /// Closes the menu of `id` without a choice.
+    pub fn dismiss(ui: &mut Ui, id: ViewId) {
+        let mut closing = None;
+        ui.with_widget::<MenuButton, _>(id, |b| {
+            b.open = false;
+            closing = b.popup.take();
+        });
+        if let Some(w) = closing {
+            ui.close_window(w);
+            ui.emit(id, Signal::ExpandedChanged, Value::Bool(false));
+        }
+    }
+
+    fn open_menu(&mut self, cx: &mut EventCx<'_>) {
+        let id = cx.id();
+        let Some(parent) = cx.window() else {
             return;
+        };
+        let anchor = cx.window_rect();
+        let rows: Vec<crate::amalfi::menus::Row> = self
+            .items
+            .iter()
+            .enumerate()
+            .map(|(i, l)| crate::amalfi::menus::Row {
+                checked: self.pop_up && self.selected == Some(i),
+                ..crate::amalfi::menus::Row::item(l)
+            })
+            .collect();
+        let ui = cx.ui();
+        let (m, _) = crate::amalfi::menus::menu(ui, &rows);
+        if let Some(i) = self.selected.filter(|_| self.pop_up) {
+            let _ = ui.set(m, Prop::SelectedIndex, Value::Int(i as i64));
         }
-        if self.pop_up {
-            self.selected = Some(i);
-        }
-        self.open = false;
-        cx.emit(Signal::SelectionChanged, Value::Int(i as i64));
-        cx.request_paint();
+        ui.connect(m, Signal::Activated, move |ui, _, v| {
+            if let Some(i) = v.as_int().and_then(|i| usize::try_from(i).ok()) {
+                MenuButton::choose_in(ui, id, i);
+            }
+        });
+        ui.connect(m, Signal::CloseRequested, move |ui, _, _| {
+            MenuButton::dismiss(ui, id);
+        });
+        let placement = if self.pop_up {
+            crate::amalfi::menus::Placement::PopUp {
+                row: self.selected.unwrap_or(0),
+            }
+        } else {
+            crate::amalfi::menus::Placement::PullDown
+        };
+        let w = crate::amalfi::menus::present(ui, parent, anchor, m, placement);
+        self.popup = Some(w);
+        self.open = true;
+        ui.set_focus(m, true);
     }
 }
 
@@ -1063,14 +1133,19 @@ impl Widget for MenuButton {
                 if self.items.is_empty() {
                     return Handled::Yes;
                 }
-                self.open = !self.open;
+                if let Some(w) = self.popup.take() {
+                    self.open = false;
+                    cx.ui().close_window(w);
+                } else {
+                    self.open_menu(cx);
+                }
                 cx.emit(Signal::ExpandedChanged, Value::Bool(self.open));
                 cx.request_paint();
                 Handled::Yes
             }
             Event::Key(k) if k.pressed && matches!(k.key, Key::Down | Key::Up) => {
-                if !self.open {
-                    self.open = true;
+                if !self.open && !self.items.is_empty() {
+                    self.open_menu(cx);
                     cx.emit(Signal::ExpandedChanged, Value::Bool(true));
                     cx.request_paint();
                 }
@@ -1223,6 +1298,35 @@ mod tests {
             ui.widget::<MenuButton>(id).map(MenuButton::shown),
             Some("Orange".to_string())
         );
+    }
+
+    #[test]
+    fn a_pop_up_opens_its_menu_and_a_row_chooses() {
+        let (mut ui, win, id, log) = scene(MenuButton::pop_up(&["Lemon", "Orange", "Fig"], 0));
+        let c = ui.tree.window_rect(id).center();
+        click(&mut ui, win, c);
+        let popup = ui
+            .windows()
+            .find(|w| matches!(w.kind, WindowKind::Popup { .. }))
+            .map(|w| (w.id, w.root));
+        let Some((popup, root)) = popup else {
+            panic!("no menu");
+        };
+        ui.prepare_frame(popup);
+        let rows: Vec<_> = ui.tree.children(ui.tree.children(root)[0]).to_vec();
+        let r = ui.tree.window_rect(rows[2]);
+        ui.pointer_move(popup, r.center(), Mods::empty());
+        ui.pointer_down(popup, r.center(), Button::Left, Mods::empty());
+        ui.pointer_up(popup, r.center(), Button::Left, Mods::empty());
+        assert_eq!(
+            ui.widget::<MenuButton>(id).map(MenuButton::shown),
+            Some("Fig".to_string())
+        );
+        assert!(
+            ui.windows()
+                .all(|w| !matches!(w.kind, WindowKind::Popup { .. }))
+        );
+        assert!(log.borrow().contains(&"selected:2".to_string()));
     }
 
     #[test]

@@ -1,10 +1,14 @@
 //! Kit parity of the buttons besides `Buttons/Push`: icon, help, link, gradient, toolbar,
 //! pop-up and pull-down.
 
+mod common;
+
+use common::{Fixed, menu_view};
 use vetro_lib::amalfi::buttons::{
     GradientButtons, HelpButton, IconButton, LinkButton, MenuButton, ToolbarButton,
 };
 use vetro_lib::amalfi::foundation::ControlSize;
+use vetro_lib::core::{Prop, Value};
 use vetro_test::{KitMaster, Scene, Tolerance, center_of};
 
 /// Small controls: Sketch antialiases the edges of small controls a little wider than Skia.
@@ -228,4 +232,57 @@ fn pop_up_and_pull_down_buttons_match_the_kit() {
         }
     }
     finish(failures, names.len());
+}
+
+#[test]
+fn open_pop_ups_and_pull_downs_match_the_kit() {
+    let names: Vec<String> = KitMaster::names("Buttons/Pop-up")
+        .into_iter()
+        .chain(KitMaster::names("Buttons/Pull-down"))
+        .filter(|n| n.contains("/Open/"))
+        .collect();
+    assert_eq!(names.len(), 4, "{names:?}");
+    let mut failures = Vec::new();
+    for name in &names {
+        let Ok(mut scene) = Scene::load(name) else {
+            continue;
+        };
+        let pop = name.contains("Pop-up");
+        let (Some(button), Some(menu)) = (
+            scene.master.layer("Button").cloned(),
+            scene.master.layer("Menu").cloned(),
+        ) else {
+            failures.push(format!("{name}: no Button or Menu"));
+            continue;
+        };
+        let label = if pop { "Lemon" } else { "Actions" };
+        let menu_kit = menu.clone();
+        let size = scene.master.size();
+        let rects = vec![button.frame, menu.frame];
+        scene.mount_sized(size, |ui| {
+            let f = ui.create(Fixed { size, rects });
+            let m = menu_view(ui, &menu_kit);
+            let _ = ui.set(m, Prop::Identifier, Value::from("Menu"));
+            let mut b = if pop {
+                MenuButton::pop_up(&[label, "Orange"], 0)
+            } else {
+                MenuButton::pull_down(label, &["Copy"])
+            };
+            b.open = true;
+            let b = ui.create(b);
+            let _ = ui.set(b, Prop::Identifier, Value::from("Button"));
+            ui.add_child(f, b);
+            ui.add_child(f, m);
+            f
+        });
+        scene.png_margin = true;
+        let report = scene.auto_geometry_except(&["Separator/Rest/Line"], &[]);
+        if !report.is_empty() {
+            failures.push(format!("{name}:\n    {}", report.join("\n    ")));
+            continue;
+        }
+        // Pixels: the kit's menu panel hides the button below it (no glass ghost); ours blurs
+        // the button behind the glass. Recorded in docs/kit-issues.md; geometry is compared.
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

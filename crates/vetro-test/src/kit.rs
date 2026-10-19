@@ -110,6 +110,10 @@ pub struct KitLayer {
     /// The text comes from an override of the instance: the layer's width is that of the
     /// master's default text, not of this one.
     pub text_overridden: bool,
+    /// The layer is inside a symbol instance wider or narrower than its master: the kit keeps
+    /// the master's horizontal places, which are not what the PNG shows (nor what the
+    /// constraints give).
+    pub inexact_x: bool,
 }
 
 /// A master: the root layer and its PNG.
@@ -291,7 +295,11 @@ fn expand_nested(l: &mut KitLayer, depth: usize) {
             && c.children.is_empty()
             && let Ok(nested) = KitMaster::load(m)
         {
+            let resized = (c.frame.width - nested.root.frame.width).abs() > 0.01;
             c.children = nested.root.children;
+            if resized {
+                mark_inexact(&mut c.children);
+            }
             // The export keeps an override by the object id of the nested layer, which the
             // layers do not carry: the overrides come bottom layer first, the layers top
             // layer first, so the i-th text override goes to the i-th text layer that is not
@@ -305,6 +313,13 @@ fn expand_nested(l: &mut KitLayer, depth: usize) {
             }
         }
         expand_nested(c, depth + 1);
+    }
+}
+
+fn mark_inexact(layers: &mut [KitLayer]) {
+    for l in layers {
+        l.inexact_x = true;
+        mark_inexact(&mut l.children);
     }
 }
 
@@ -396,6 +411,7 @@ fn layer(v: &Value, root: bool) -> KitLayer {
             })
             .unwrap_or_default(),
         text_overridden: false,
+        inexact_x: false,
     }
 }
 
