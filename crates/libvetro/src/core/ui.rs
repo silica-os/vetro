@@ -101,6 +101,12 @@ pub enum Request {
     /// The window's content goes under the window buttons; its toolbar is this tall
     /// (silica-window-v1 full-size content; 0: a regular title bar).
     SetToolbarHeight(WindowId, f32),
+    /// Join Ossido's shell channel.
+    ConnectShell,
+    /// A request on the shell channel.
+    Shell(crate::core::shell::ShellRequest),
+    /// End the session lock.
+    Unlock,
     /// A frame is wanted.
     Redraw(WindowId),
     /// The pointer shape.
@@ -238,6 +244,8 @@ pub struct Ui {
     raster_cache: bool,
     /// Bytes taken by those images.
     raster_bytes: std::cell::Cell<usize>,
+    /// The screens (the platform keeps them current).
+    pub(crate) outputs: Vec<crate::core::shell::OutputInfo>,
 }
 
 impl Default for Ui {
@@ -278,6 +286,7 @@ impl Ui {
             frame_counter: 0,
             raster_cache: false,
             raster_bytes: std::cell::Cell::new(0),
+            outputs: Vec::new(),
         }
     }
 

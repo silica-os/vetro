@@ -29,6 +29,10 @@ pub enum AppEvent {
     Open(Vec<String>),
     /// Quit (log out, Force Quit's polite path, the registry).
     Quit,
+    /// The screens changed ([`Ui::outputs`]).
+    OutputsChanged,
+    /// An event of Ossido's shell channel ([`Ui::connect_shell`]).
+    Shell(crate::core::shell::ShellEvent),
 }
 
 /// A handler of lifecycle events.
@@ -192,7 +196,7 @@ impl Ui {
                     }
                 }
                 AppEvent::Quit => self.request(Request::Quit),
-                AppEvent::Open(_) => {}
+                AppEvent::Open(_) | AppEvent::OutputsChanged | AppEvent::Shell(_) => {}
             },
         }
         self.flush();

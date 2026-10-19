@@ -81,6 +81,7 @@ use silica_protocols::glass::client::silica_glass_v1::{self, SilicaGlassV1};
 use silica_protocols::menu::client::silica_menu_manager_v1::SilicaMenuManagerV1;
 use silica_protocols::menu::client::silica_menu_v1::{self, SilicaMenuV1};
 use silica_protocols::menu::client::silica_popup_menu_v1::{self, SilicaPopupMenuV1};
+use silica_protocols::shell::client::silica_shell_manager_v1::{self, SilicaShellManagerV1};
 use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
 use silica_protocols::window::client::silica_window_v1::{self, SilicaWindowV1};
 
@@ -297,6 +298,8 @@ pub struct Platform {
     glass_manager: Option<SilicaGlassManagerV1>,
     window_manager: Option<SilicaWindowManagerV1>,
     menu_manager: Option<SilicaMenuManagerV1>,
+    /// Ossido's shell channel (the shell process only, [`Ui::connect_shell`]).
+    shell: Option<SilicaShellManagerV1>,
     menu: Option<SilicaMenuV1>,
     popup_menus: Vec<(SilicaPopupMenuV1, u64)>,
     surfaces: Vec<Surface>,
@@ -568,6 +571,7 @@ impl Platform {
             glass_manager: globals.bind(&qh, 1..=9, ()).ok(),
             window_manager: globals.bind(&qh, 1..=4, ()).ok(),
             menu_manager: globals.bind(&qh, 1..=2, ()).ok(),
+            shell: None,
             menu: None,
             popup_menus: Vec::new(),
             compositor,
@@ -711,6 +715,23 @@ impl Platform {
                     w.set_min_size(min.map(px));
                     w.set_max_size(max.map(px));
                     w.commit();
+                }
+            }
+            Request::ConnectShell => {
+                if self.shell.is_none() {
+                    match self
+                        .registry
+                        .bind_one::<SilicaShellManagerV1, _, _>(&self.qh, 1..=10, ())
+                    {
+                        Ok(m) => self.shell = Some(m),
+                        Err(e) => tracing::warn!("no shell channel: {e}"),
+                    }
+                }
+            }
+            Request::Shell(req) => self.shell_request(req),
+            Request::Unlock => {
+                if let Some(lock) = self.lock.take() {
+                    lock.unlock();
                 }
             }
             Request::SetToolbarHeight(id, h) => {
@@ -922,7 +943,17 @@ impl Platform {
                         }
                     }
                 }
-                let output = self.outputs.outputs().next();
+                let wanted = match &win.kind {
+                    WindowKind::Lock { output } => output.clone(),
+                    _ => None,
+                };
+                let output = self
+                    .outputs
+                    .outputs()
+                    .find(|o| {
+                        wanted.is_some() && self.outputs.info(o).and_then(|i| i.name) == wanted
+                    })
+                    .or_else(|| self.outputs.outputs().next());
                 let (Some(lock), Some(output)) = (&self.lock, output) else {
                     return;
                 };
@@ -1776,9 +1807,122 @@ impl OutputHandler for Platform {
     fn output_state(&mut self) -> &mut OutputState {
         &mut self.outputs
     }
-    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
-    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {
+        self.sync_outputs();
+    }
+    fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {
+        self.sync_outputs();
+    }
+    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {
+        self.sync_outputs();
+    }
+}
+
+impl Platform {
+    /// Tells the core about the screens.
+    fn sync_outputs(&mut self) {
+        let list: Vec<crate::core::shell::OutputInfo> = self
+            .outputs
+            .outputs()
+            .filter_map(|o| self.outputs.info(&o))
+            .map(|i| {
+                let (x, y) = i.logical_position.unwrap_or((0, 0));
+                let (w, h) = i
+                    .logical_size
+                    .unwrap_or((i.modes.first().map_or(0, |m| m.dimensions.0), 0));
+                crate::core::shell::OutputInfo {
+                    name: i.name.clone().unwrap_or_default(),
+                    position: crate::geom::Point::new(x as f32, y as f32),
+                    size: Size::new(w as f32, h as f32),
+                    scale: i.scale_factor.max(1) as f32,
+                }
+            })
+            .collect();
+        self.ui.set_outputs(list);
+    }
+
+    fn shell_request(&mut self, req: crate::core::shell::ShellRequest) {
+        use crate::core::shell::ShellRequest as R;
+        let Some(m) = &self.shell else {
+            tracing::warn!("shell request without the shell channel: {req:?}");
+            return;
+        };
+        match req {
+            R::Activate(id) => m.activate(id),
+            R::ActivateApp(id) => {
+                if m.version() >= 10 {
+                    m.activate_app(id);
+                }
+            }
+            R::Execute(id) => m.execute(id),
+            R::ExecuteWith(id, params) => {
+                if m.version() >= 5 {
+                    m.execute_with(id, params);
+                }
+            }
+            R::Launch(cmd) => m.launch(cmd),
+            R::Broadcast(topic, value) => {
+                if m.version() >= 4 {
+                    m.broadcast(topic, value);
+                }
+            }
+            R::ActivateMenuItem(serial, id) => {
+                if m.version() >= 8 {
+                    m.activate_menu_item(serial, id);
+                }
+            }
+        }
+    }
+}
+
+impl Dispatch<SilicaShellManagerV1, ()> for Platform {
+    fn event(
+        state: &mut Self,
+        _: &SilicaShellManagerV1,
+        event: silica_shell_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        use crate::core::shell::ShellEvent as E;
+        use silica_shell_manager_v1::Event as W;
+        let e = match event {
+            W::Focused { identifier } => E::Focused(identifier),
+            W::Command { id } => E::Command(id),
+            W::Minimized {
+                identifier,
+                minimized,
+            } => E::Minimized {
+                identifier,
+                minimized: minimized != 0,
+            },
+            W::Broadcast { topic, value } => E::Broadcast { topic, value },
+            W::WindowMenu { identifier, x, y } => E::WindowMenu {
+                identifier,
+                at: crate::geom::Point::new(x as f32, y as f32),
+            },
+            W::AppMenu {
+                app_id,
+                serial,
+                fd,
+                size,
+            } => {
+                use std::io::Read;
+                let mut json = String::new();
+                let mut file = std::fs::File::from(fd);
+                let _ = (&mut file)
+                    .take(u64::from(size).min(16 << 20))
+                    .read_to_string(&mut json);
+                E::AppMenu {
+                    app_id,
+                    serial,
+                    json,
+                }
+            }
+            _ => return,
+        };
+        state.ui.shell_event(e);
+    }
 }
 
 impl WindowHandler for Platform {
