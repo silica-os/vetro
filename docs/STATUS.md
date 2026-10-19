@@ -65,7 +65,10 @@ task takes `/dev/shm/silica-vm.lock` per command). Local e2e: Ossido headless (s
   expanded nodes, split positions, selected tabs, collapsed panes, scroll offsets in
   `$XDG_STATE_HOME/<app id>/windows/<name>.state`); full-size content with a toolbar
   (`Ui::set_toolbar_height`, also on shown windows); frame alignment applied
-  (`.align()`: content at its own size aligned in a larger frame).
+  (`.align()`: content at its own size aligned in a larger frame); input regions
+  (`Ui::set_input_region`, for shell surfaces with transparent margins); undecorated
+  windows (`Window::decorated`: alert panels of their own have no title bar and are modal
+  xdg dialogs without a parent, which Ossido centres on the screen).
 - **App**: lifecycle (`core::app`), single instance and reopen through silica-desktop's app
   registry socket (`platform::registry`), drag and drop, xdg-activation, pinch gestures, idle
   inhibition, the AccessKit AT-SPI bridge (`platform::a11y`, verified in the VM when
@@ -79,7 +82,9 @@ task takes `/dev/shm/silica-vm.lock` per command). Local e2e: Ossido headless (s
   callbacks.
 - **Render backends**: Vulkan (primary; ash + Skia Ganesh VK, direct driver loading as the
   embedder, two frames in flight with per-slot semaphores and fences around Skia's submit,
-  reduced shader variations, full repaint), GLES/EGL (buffer-age partial repaint,
+  reduced shader variations; partial repaints into a retained GPU back surface copied onto
+  each swapchain image, since Venus does not keep image contents; a pipeline warm-up draw
+  after the first frame, as skia-safe has no persistent shader cache binding), GLES/EGL (buffer-age partial repaint,
   swap-with-damage), software (shm raster). Choice: `VETRO_RENDERER=vulkan|gl|software`,
   falling back in that order. Raster caches of static subtrees (`core::raster`: stable for
   3 frames, ≥ 24 items, no backdrop/glass/custom drawing; drawn at whole device pixels;
@@ -202,7 +207,10 @@ also has `ignore_aspects` (a kit defect on every layer, e.g. the dark glass blur
 `skip_trees` (nested components replaced by placeholders); kit-driven builders shared by the
 tests live in `tests/common/mod.rs`. Open problems: app icons (Item/App, Pop-up/App, alert
 icons), the `Open` masters of buttons, the menu bar family, Windows with
-the real nested components, window controls placement (kit pitch 24 vs measured 23).
+the real nested components. Window buttons are at the 23 pt pitch (windows.md; the kit's
+bars and pieces still render them at 24 pt, masked there); alerts follow the binding
+anatomy of components.md (280 wide, centred text, buttons one per row 240 × 28, default
+first, Escape last).
 
 ## Performance (#254 budgets)
 
@@ -214,30 +222,46 @@ the real nested components, window controls placement (kit pitch 24 vs measured 
   150 ms; the e2e test reports it). On the dev VM the Vulkan (Venus) first frame takes
   seconds (driver load and pipeline compiles: Skia's persistent pipeline cache is not
   reachable through skia-safe) and the VM's timings jitter by whole seconds;
-- shell memory: not measured yet (the shell is not on Vetro yet).
+- shell memory: the Vetro shell in the VM (Vulkan, Venus) was 166 MB resident with full-size
+  icon and wallpaper decodes; icons are now kept at 256 px and wallpapers at the output's
+  size (to be measured again). The Flutter shell's embedder starts at 73 MB.
 
 ## Next
 
 1. Shell on Vetro (§2): silica-desktop branch `vetro` (worktree ~/build/wt-vetro-shell,
    crate `crates/shell`, binary `silica-shell`; libvetro from the sibling `../vetro`
    checkout, the workspace patches vetro's git dependency on silica-desktop's protocols to
-   the local crates). Done: the lock screen (session lock per output, wallpaper, clock and
-   date, user block, password field states and the shake, unlock through System1; e2e on a
-   headless Ossido), the desktop wallpaper (Background layer), the menu bar (system menu,
-   the focused app's menus from `app_menu`, submenus, the clock), the Dock (pinned and
-   running apps, activate/launch, running discs, hover label, Silica and theme icons).
-   Ossido on that branch: xdg-dialog sheets (centred, modal, veiled parent, following).
-   Libvetro for the shell (Rust API): `core::shell` (outputs, unlock, the
-   silica_shell_manager_v1 channel, ext-foreign-toplevel-list), `platform::post`, popups of
-   layer surfaces. Next, in order: the menu bar's status items and the lock screen's status
-   bar, Dock magnification/bounce/menus/Trash/stacks, Faro and the Launcher, notifications,
-   Control Center, the switcher, the screenshot UI; then `xtask --toolkit=vetro`.
-2. Performance: damage-based Vulkan repaint (keep the previous image), a Skia persistent
-   pipeline cache (bindings), shell memory measurement.
+   the local crates). `cargo xtask os deploy --toolkit=vetro` runs it as the dev session's
+   kept shell (verified in the VM with Vulkan/Venus: wallpaper from silica.assets, menu bar,
+   status items, Control Center, Dock with magnification and bounce, Faro, Launcher,
+   banners, the screenshot thumbnail). Done:
+   - lock screen (session lock per output, wallpaper, clock, user block, password states and
+     shake, unlock through System1, Wi-Fi and battery status items);
+   - desktop wallpaper (Background layer; images, colour, the Amalfi set or silica.assets);
+   - menu bar (system menu, the focused app's menus, submenus, status items over System1:
+     Bluetooth, Wi-Fi, Sound, Battery, Search, Clock, Control Center);
+   - Control Center (Wi-Fi, Bluetooth, Do Not Disturb, Dark Mode, Screen Capture, Display
+     and Sound sliders through silica-daemon);
+   - Dock (pinned and running apps, Silica icons for Silica's apps, the kit's Missing tile,
+     magnification with the measured profile and curve, grow/shrink of unpinned apps,
+     launch bounce, context menus with Keep in Dock/Remove, Show All Windows, Hide, Quit,
+     the separator's magnification toggle, Trash full/empty with the Empty Trash alert, the
+     Downloads stack as a pile and a grid, `dock.icons` for the minimise effect);
+   - Faro and the Launcher (one morphing panel: apps, home files, calculations, web search;
+     grid with categories, recents, search, scroll bar);
+   - notifications (banners with the measured timings, Notification Center with stacks,
+     Clear All, the empty state, Do Not Disturb);
+   - app switcher (switcher.* from Ossido), screenshot thumbnail, selection and bar;
+   - Gatekeeper, administrator authentication and Force Quit dialogs.
+   Ossido on that branch: xdg-dialog sheets, parentless modal dialogs centred on screen.
+   Next: Dock dragging, auto-hide, badges, minimised windows; stack fan and list views;
+   notification actions and replies; the screenshot editor (#154) and recording (#153);
+   Notification Center widgets; measure the shell's memory again.
+2. Performance: a real Skia persistent shader cache needs a skia-safe binding.
 3. Collections: type-select, column reordering, drag and drop of rows, rubber-band
    selection in grids.
 4. Open kit problems: app icons (bitmaps in the kit), `Open` button masters, menu bar family,
-   window dot pitch (kit 24 vs tokens 23: design decision for the Mac session).
+   the 24 pt window buttons in the kit's bar and piece renders.
 5. `vetro-terminal` (port `crates/embedder/src/termgrid.rs` + `pty.rs`) with the apps phase.
 6. Keep Vetro free of distribution-specific assumptions (Silica OS moves to a
    BuildStream/freedesktop-sdk image): fonts are bundled, fontconfig and the services are
