@@ -207,6 +207,7 @@ pub struct Ui {
     /// Monotonic time in seconds (set by the platform, or by tests).
     pub now: f64,
     animating: Vec<ViewId>,
+    pub(crate) node_anims: Vec<ViewId>,
     timers: Vec<Timer>,
     next_timer: u64,
     clipboard: Option<String>,
@@ -244,6 +245,7 @@ impl Ui {
             requests: Vec::new(),
             now: 0.0,
             animating: Vec::new(),
+            node_anims: Vec::new(),
             timers: Vec::new(),
             next_timer: 1,
             clipboard: None,
@@ -305,12 +307,24 @@ impl Ui {
         self.set_window_recursive(child, window);
         self.request_layout(parent);
         self.request_paint(child);
+        if let Some(n) = self.tree.get_mut(child) {
+            n.flags.remove(NodeFlags::LEAVING);
+        }
+        self.animate_insert(child);
         Ok(())
     }
 
     /// Removes `child` from its parent (the parent's reference is dropped; a view nobody
     /// references any more is destroyed).
     pub fn detach(&mut self, child: ViewId) {
+        if self.begin_leave(child) {
+            return;
+        }
+        self.detach_now(child);
+    }
+
+    /// Removes `child` from its parent at once (no leave transition).
+    pub fn detach_now(&mut self, child: ViewId) {
         let Some(parent) = self.tree.parent(child) else {
             return;
         };
@@ -528,6 +542,20 @@ impl Ui {
             Prop::Scale => {
                 m.scale = value.as_f32().ok_or(Error::BadValue)?;
                 PropChange::Paint
+            }
+            Prop::Animation => {
+                m.animation = value
+                    .as_int()
+                    .and_then(crate::core::anim::timing_from_int)
+                    .ok_or(Error::BadValue)?;
+                PropChange::Nothing
+            }
+            Prop::Transition => {
+                m.transition = value
+                    .as_int()
+                    .and_then(crate::core::anim::Transition::from_int)
+                    .ok_or(Error::BadValue)?;
+                PropChange::Nothing
             }
             Prop::Hidden => {
                 let hidden = value.as_bool().ok_or(Error::BadValue)?;
@@ -1292,7 +1320,8 @@ impl Ui {
 
     fn hit_view(&self, id: ViewId, p: Point) -> Option<(ViewId, Point)> {
         let n = self.tree.get(id)?;
-        if n.flags.contains(NodeFlags::HIDDEN) || n.modifiers.opacity <= 0.0 {
+        if n.flags.intersects(NodeFlags::HIDDEN | NodeFlags::LEAVING) || n.modifiers.opacity <= 0.0
+        {
             return None;
         }
         let mut local = p - n.frame.origin() - n.modifiers.offset;
@@ -1724,7 +1753,7 @@ impl Ui {
 
     /// Whether anything animates.
     pub fn is_animating(&self) -> bool {
-        !self.animating.is_empty()
+        !self.animating.is_empty() || !self.node_anims.is_empty()
     }
 
     /// Advances time by `dt` seconds: ticks animations, fires due timers, runs handlers.
@@ -1755,6 +1784,7 @@ impl Ui {
             }
         }
         self.animating = still;
+        self.tick_node_anims(dt as f32);
         self.fire_timers();
         self.flush();
     }
@@ -1976,18 +2006,26 @@ impl Ui {
             return;
         }
         let m = &n.modifiers;
+        let (aoff, aop, ascale) = match &n.anim {
+            Some(a) => (a.offset.get(), a.opacity.get(), a.scale.get()),
+            None => (Point::ZERO, 1.0, 1.0),
+        };
         canvas.save();
-        canvas.translate((n.frame.x + m.offset.x, n.frame.y + m.offset.y));
-        if (m.scale - 1.0).abs() > 1e-6 {
+        canvas.translate((
+            n.frame.x + m.offset.x + aoff.x,
+            n.frame.y + m.offset.y + aoff.y,
+        ));
+        let scale = m.scale * ascale;
+        if (scale - 1.0).abs() > 1e-6 {
             let c = (n.frame.width / 2.0, n.frame.height / 2.0);
             canvas.translate(c);
-            canvas.scale((m.scale, m.scale));
+            canvas.scale((scale, scale));
             canvas.translate((-c.0, -c.1));
         }
         let dim_here = !dimmed
             && n.flags.contains(NodeFlags::DISABLED)
             && n.widget.as_deref().is_some_and(|w| w.dims_when_disabled());
-        let mut alpha = m.opacity;
+        let mut alpha = m.opacity * aop;
         if dim_here {
             alpha *= crate::amalfi::tokens::states::DISABLED_OPACITY;
         }

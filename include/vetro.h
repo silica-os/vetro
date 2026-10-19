@@ -212,6 +212,8 @@ typedef void (*VetroMenuFn)(uint32_t id, void *user);
 #define VETRO_PROP_FONT_FAMILY 157u
 #define VETRO_PROP_FONT_SIZE 158u
 #define VETRO_PROP_FONT_WEIGHT 159u
+#define VETRO_PROP_ANIMATION 160u
+#define VETRO_PROP_TRANSITION 161u
 
 /* Signals. */
 #define VETRO_SIGNAL_ACTIVATED 1u

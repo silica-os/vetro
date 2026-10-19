@@ -369,11 +369,59 @@ impl Element {
         self.prop(Prop::IS_CANCEL, PValue::Bool(true))
     }
 
+    /// Animates position changes of this view with `a`.
+    pub fn animation(self, a: Animation) -> Self {
+        self.prop(Prop::ANIMATION, PValue::Int(a as i64))
+    }
+
+    /// How this view enters and leaves.
+    pub fn transition(self, t: Transition) -> Self {
+        self.prop(Prop::TRANSITION, PValue::Int(t as i64))
+    }
+
     /// Adds children.
     pub fn children(mut self, children: impl IntoChildren) -> Self {
         self.children.extend(children.into_children());
         self
     }
+}
+
+/// An implicit animation (the motion tokens; measured curves belong to components).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i64)]
+pub enum Animation {
+    /// None.
+    None = 0,
+    /// `spring.snappy`.
+    Snappy = 1,
+    /// `spring.panel`.
+    Panel = 2,
+    /// `spring.window`.
+    Window = 3,
+    /// `spring.morph`.
+    Morph = 4,
+    /// `spring.bouncy`.
+    Bouncy = 5,
+    /// `fade.instant`.
+    FadeInstant = 6,
+    /// `fade.quick`.
+    FadeQuick = 7,
+    /// `fade.standard`.
+    FadeStandard = 8,
+    /// `fade.slow`.
+    FadeSlow = 9,
+}
+
+/// How a view enters and leaves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i64)]
+pub enum Transition {
+    /// At once.
+    None = 0,
+    /// Fades.
+    Opacity = 1,
+    /// Fades and scales.
+    Scale = 2,
 }
 
 /// Things that become a list of children.

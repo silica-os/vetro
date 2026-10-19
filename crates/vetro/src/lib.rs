@@ -39,16 +39,17 @@ use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
 pub use element::{
-    Component, Element, Handler, IntoChildren, Key, PValue, button, column, component, custom,
-    for_each, grid, group, host, label, overlay, row, spacer, symbol, text_view, view,
+    Animation, Component, Element, Handler, IntoChildren, Key, PValue, Transition, button, column,
+    component, custom, for_each, grid, group, host, label, overlay, row, spacer, symbol, text_view,
+    view,
 };
 pub use vetro_kit as kit;
 
 /// Everything an app needs.
 pub mod prelude {
     pub use crate::{
-        Binding, Component, Cx, Element, Model, State, button, column, component, custom, for_each,
-        grid, group, host, label, overlay, row, spacer, symbol, view,
+        Animation, Binding, Component, Cx, Element, Model, State, Transition, button, column,
+        component, custom, for_each, grid, group, host, label, overlay, row, spacer, symbol, view,
     };
     pub use vetro_kit::{Color, Signal, Value, rgba};
 }

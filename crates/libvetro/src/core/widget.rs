@@ -197,7 +197,13 @@ impl LayoutCx<'_> {
             .children(self.id)
             .iter()
             .copied()
-            .filter(|c| !self.ui.tree.flags(*c).contains(NodeFlags::HIDDEN))
+            .filter(|c| {
+                !self
+                    .ui
+                    .tree
+                    .flags(*c)
+                    .intersects(NodeFlags::HIDDEN | NodeFlags::LEAVING)
+            })
             .collect()
     }
 

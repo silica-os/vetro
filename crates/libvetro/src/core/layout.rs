@@ -400,6 +400,7 @@ impl Ui {
             if old.size() != rect.size() {
                 self.request_paint(id);
             }
+            self.animate_move(id, old, rect);
         }
         if !changed && !needs {
             return;

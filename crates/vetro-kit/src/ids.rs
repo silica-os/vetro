@@ -93,6 +93,8 @@ impl Prop {
     pub const FONT_FAMILY: Prop = Prop(sys::VETRO_PROP_FONT_FAMILY);
     pub const FONT_SIZE: Prop = Prop(sys::VETRO_PROP_FONT_SIZE);
     pub const FONT_WEIGHT: Prop = Prop(sys::VETRO_PROP_FONT_WEIGHT);
+    pub const ANIMATION: Prop = Prop(sys::VETRO_PROP_ANIMATION);
+    pub const TRANSITION: Prop = Prop(sys::VETRO_PROP_TRANSITION);
 }
 
 /// A signal id.
