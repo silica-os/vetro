@@ -30,8 +30,19 @@ pub mod metrics {
 }
 
 /// The surface of a group box and its column of controls.
-#[derive(Debug, Default)]
-pub struct BoxSurface;
+#[derive(Debug)]
+pub struct BoxSurface {
+    /// Space between the controls.
+    pub spacing: f32,
+}
+
+impl Default for BoxSurface {
+    fn default() -> Self {
+        BoxSurface {
+            spacing: metrics::SPACING,
+        }
+    }
+}
 
 impl Widget for BoxSurface {
     fn kind(&self) -> &'static str {
@@ -52,7 +63,7 @@ impl Widget for BoxSurface {
             width = width.max(s.width);
             height += s.height;
             if i > 0 {
-                height += metrics::SPACING;
+                height += self.spacing;
             }
         }
         Size::new(inner.unwrap_or(width) + 2.0 * pad, height + 2.0 * pad)
@@ -68,7 +79,7 @@ impl Widget for BoxSurface {
                 c,
                 Rect::new(pad, y, s.width.min(inner.max(s.width)), s.height),
             );
-            y += s.height + metrics::SPACING;
+            y += s.height + self.spacing;
         }
     }
 
@@ -188,9 +199,21 @@ impl Widget for GroupBox {
 
 /// Makes a group box over `children` (views already made, in order).
 pub fn group_box(ui: &mut Ui, title: Option<&str>, children: &[ViewId]) -> ViewId {
+    group_box_with(ui, title, children, metrics::SPACING, "Box")
+}
+
+/// A group box with its own spacing and name for the surface's view (a form section: 12
+/// apart, `Group`).
+pub fn group_box_with(
+    ui: &mut Ui,
+    title: Option<&str>,
+    children: &[ViewId],
+    spacing: f32,
+    surface_name: &str,
+) -> ViewId {
     let group = ui.create(GroupBox::new(title));
-    let surface = ui.create(BoxSurface);
-    let _ = ui.set(surface, Prop::Identifier, Value::from("Box"));
+    let surface = ui.create(BoxSurface { spacing });
+    let _ = ui.set(surface, Prop::Identifier, Value::from(surface_name));
     for c in children {
         ui.add_child(surface, *c);
     }

@@ -293,10 +293,12 @@ fn expand_nested(l: &mut KitLayer, depth: usize) {
         {
             c.children = nested.root.children;
             // The export keeps an override by the object id of the nested layer, which the
-            // layers do not carry: the i-th text override goes to the i-th text layer that is
-            // not a glyph.
+            // layers do not carry: the overrides come bottom layer first, the layers top
+            // layer first, so the i-th text override goes to the i-th text layer that is not
+            // a glyph, counting from the last.
             let mut texts = Vec::new();
             collect_texts(&mut c.children, &mut texts);
+            texts.reverse();
             for (value, target) in c.overrides.clone().into_iter().zip(texts) {
                 target.text = Some(value);
                 target.text_overridden = true;

@@ -4,6 +4,7 @@ pub mod button;
 pub mod buttons;
 pub mod disclosure;
 pub mod fields;
+pub mod forms;
 pub mod foundation;
 pub mod group_box;
 pub mod progress;

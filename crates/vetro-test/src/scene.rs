@@ -378,25 +378,50 @@ impl Scene {
             return Err(format!("size {ow}x{oh}, kit {kw}x{kh}"));
         }
         let (w, h) = (kw.min(ow), kh.min(oh));
-        let crop = |px: Vec<u8>, from_w: i32| -> Vec<u8> {
-            if from_w == w && px.len() == (w * h * 4) as usize {
-                return px;
-            }
+        let crop = |px: &[u8], from_w: i32, dx: i32, dy: i32| -> Vec<u8> {
             let mut out = Vec::with_capacity((w * h * 4) as usize);
-            for y in 0..h as usize {
-                let start = y * from_w as usize * 4;
+            for y in 0..h {
+                let start = (((y + dy) * from_w) + dx) as usize * 4;
                 if let Some(row) = px.get(start..start + w as usize * 4) {
                     out.extend_from_slice(row);
                 }
             }
             out
         };
-        let a = crop(rgba(&kit).ok_or("cannot read the PNG's pixels")?, kw);
-        let b = crop(rgba(&ours).ok_or("cannot read our pixels")?, ow);
+        let kit_px = rgba(&kit).ok_or("cannot read the PNG's pixels")?;
+        let our_px = rgba(&ours).ok_or("cannot read our pixels")?;
+        let a = crop(&kit_px, kw, 0, 0);
+        // Ours may be bigger than the kit's: the margin is at the top left (the window's
+        // origin) or only right and below; the better fit counts.
+        let mut offset = (0, 0);
+        if (ow, oh) != (kw, kh) {
+            let (ox, oy) = (
+                (self.origin.x * 2.0).round() as i32,
+                (self.origin.y * 2.0).round() as i32,
+            );
+            let mut best = u64::MAX;
+            for (dx, dy) in [(0, 0), (ox, oy)] {
+                if dx + w > ow || dy + h > oh {
+                    continue;
+                }
+                let c = crop(&our_px, ow, dx, dy);
+                let d: u64 = a
+                    .iter()
+                    .zip(&c)
+                    .map(|(p, q)| u64::from(p.abs_diff(*q)))
+                    .sum();
+                if d < best {
+                    best = d;
+                    offset = (dx, dy);
+                }
+            }
+        }
+        let b = crop(&our_px, ow, offset.0, offset.1);
         let mut mask = vec![false; (w * h) as usize];
         let add_mask = |r: Rect, mask: &mut Vec<bool>| {
-            for y in (r.y * 2.0) as i32..(r.bottom() * 2.0) as i32 {
-                for x in (r.x * 2.0) as i32..(r.right() * 2.0) as i32 {
+            let (sx, sy) = offset;
+            for y in (r.y * 2.0) as i32 - sy..(r.bottom() * 2.0) as i32 - sy {
+                for x in (r.x * 2.0) as i32 - sx..(r.right() * 2.0) as i32 - sx {
                     if x >= 0
                         && y >= 0
                         && x < w
@@ -472,8 +497,8 @@ impl Scene {
                         continue;
                     }
                     let px = Point::new(
-                        ((i as i32 % w) as f32 + 0.5) / 2.0,
-                        ((i as i32 / w) as f32 + 0.5) / 2.0,
+                        ((i as i32 % w + offset.0) as f32 + 0.5) / 2.0,
+                        ((i as i32 / w + offset.1) as f32 + 0.5) / 2.0,
                     ) - self.origin;
                     let in_band = bands.iter().any(|(r, _radius, band)| {
                         r.contains(px) && !r.inflate(-band, -band).contains(px)
