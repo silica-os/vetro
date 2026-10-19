@@ -17,6 +17,7 @@ pub mod steppers;
 pub mod switch;
 pub mod text;
 pub mod theme;
+pub mod titlebars;
 pub mod toggles;
 pub mod tokens;
 pub mod tooltips;

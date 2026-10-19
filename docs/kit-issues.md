@@ -53,3 +53,16 @@ test that names it, until the kit is fixed.
   `Surface/Control`; ours follows each.
 - `Row/Volume`: the kit names the glyph `externaldrive`; ours is the `drive` symbol.
 - `Row/Volume/Hover`: the eject button is hovered together with the row.
+
+## Titlebars
+
+- Several instances of one master share a name in the compact bar (`Toolbar button` ×4): their
+  layer path is ambiguous, so geometry skips them (the pixels cover them).
+- `Title Bar/Subtitle`: Sketch measures the subtitle 2 pt wider than we do; its frame is not
+  compared.
+- `Piece/Search Token`: the nested token master keeps its own label box (28 pt high).
+- `Segmented Text/Inactive`: the labels stay primary in the kit while the icon segments dim.
+- The window buttons' pitch in the kit is 24 pt (8 pt gap) and the bars place them 16 or 20 pt in;
+  `windowControls` in the tokens (centre 26, pitch 23) is the measured placement of the shell.
+- The 16 pt dot masters are compared with a loose mean (edge pixels dominate); their inside
+  matches exactly.

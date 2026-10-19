@@ -67,6 +67,9 @@ pub struct Scene {
     pub extra_mask: Vec<Rect>,
     /// The kit PNG has an empty margin right and below (compare the top left corner).
     pub png_margin: bool,
+    /// Aspects (`#blurs` …) whose differences are ignored for every layer (a defect of the
+    /// kit that touches many layers, recorded in docs/kit-issues.md).
+    pub ignore_aspects: Vec<String>,
 }
 
 impl Scene {
@@ -90,6 +93,7 @@ impl Scene {
             origin,
             extra_mask: Vec::new(),
             png_margin: false,
+            ignore_aspects: Vec::new(),
         }
     }
 
@@ -148,7 +152,11 @@ impl Scene {
         let ours = self.layers();
         let mut report = Vec::new();
         let mut used_dev = vec![false; deviations.len()];
+        let ignored = self.ignore_aspects.clone();
         let mut check = |key: String, ok: bool, detail: String, report: &mut Vec<String>| {
+            if ignored.iter().any(|a| key.ends_with(a.as_str())) {
+                return;
+            }
             let dev = deviations.iter().position(|d| *d == key);
             match (ok, dev) {
                 (true, Some(i)) => {
