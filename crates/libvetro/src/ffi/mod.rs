@@ -1374,12 +1374,7 @@ pub extern "C" fn vetro_window_set_toolbar_height(
     height: f32,
 ) -> VetroStatus {
     guard(VETRO_ERROR_PLATFORM, || {
-        with_window(window, |ui, w| {
-            if let Some(win) = ui.window_mut(w) {
-                win.toolbar_height = height.clamp(0.0, 200.0);
-                win.full_size_content = height > 0.0;
-            }
-        })
+        with_window(window, |ui, w| ui.set_toolbar_height(w, height))
     })
 }
 

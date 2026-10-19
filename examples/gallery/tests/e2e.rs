@@ -82,15 +82,32 @@ fn gallery_in_ossido_headless() {
         .env("VETRO_RENDERER", "software")
         .env("VETRO_DETERMINISTIC", "1")
         .env("VETRO_MULTI_INSTANCE", "1")
+        .env("VETRO_STARTUP_TIMING", "1")
+        .env("XDG_STATE_HOME", dir.join("state"))
         .env(
             "DBUS_SESSION_BUS_ADDRESS",
             format!("unix:path={}", dir.join("no-bus").display()),
         )
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let mut gallery = Kill(gallery);
+    // The cold start (#254: 150 ms in release on the reference machine): reported here, and
+    // held to a loose bound in this (debug) build.
+    let stderr = gallery.0.stderr.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if let Some(ms) = line
+                .strip_prefix("vetro: first frame ")
+                .and_then(|r| r.split(' ').next())
+                .and_then(|v| v.parse::<f64>().ok())
+            {
+                let _ = tx.send(ms);
+            }
+        }
+    });
     let ctl = |args: &[&str]| -> String {
         let out = Command::new(&cli)
             .arg("--control")
@@ -109,6 +126,9 @@ fn gallery_in_ossido_headless() {
         assert!(start.elapsed() < Duration::from_secs(20), "no window");
         std::thread::sleep(Duration::from_millis(100));
     }
+    let first = rx.recv_timeout(Duration::from_secs(20)).unwrap_or(f64::NAN);
+    eprintln!("cold start: first frame {first:.1} ms");
+    assert!(first < 3000.0, "cold start {first} ms");
     std::thread::sleep(Duration::from_millis(500));
     let shot = dir.join("shot.png");
     ctl(&["screenshot", shot.to_str().unwrap()]);

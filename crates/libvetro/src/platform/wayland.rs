@@ -326,6 +326,8 @@ pub struct Platform {
     app_id: String,
     had_windows: bool,
     start: Instant,
+    /// The first frame was presented (cold start reported once).
+    first_frame_done: bool,
     last_tick: Instant,
     exit: bool,
 }
@@ -353,6 +355,22 @@ fn err(e: impl std::fmt::Display) -> PlatformError {
     PlatformError(e.to_string())
 }
 
+/// When the app loop was entered (the cold start is measured from it).
+static RUN_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+/// Prints how long after the app loop's start a stage of the start-up ended
+/// (`VETRO_STARTUP_TIMING`).
+fn stage(name: &str) {
+    if std::env::var_os("VETRO_STARTUP_TIMING").is_some()
+        && let Some(t) = RUN_START.get()
+    {
+        eprintln!(
+            "vetro: {name}: {:.1} ms",
+            t.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+}
+
 /// Connects to the Wayland display, runs `setup` on the core, and runs the event loop until
 /// the app quits (the last window closes or [`Request::Quit`]).
 pub fn run(app_id: &str, setup: impl FnOnce(&mut Ui)) -> Result<(), PlatformError> {
@@ -366,12 +384,14 @@ pub fn run_with(
     files: &[String],
     setup: impl FnOnce(&mut Ui),
 ) -> Result<(), PlatformError> {
+    let _ = RUN_START.set(Instant::now());
     if std::env::var_os("VETRO_MULTI_INSTANCE").is_none()
         && crate::platform::registry::forward(app_id, files)
     {
         tracing::info!("{app_id}: the running process takes over");
         return Ok(());
     }
+    stage("registry forward");
     let registration = match crate::platform::registry::register(app_id) {
         Ok(r) => Some(r),
         Err(e) => {
@@ -380,6 +400,7 @@ pub fn run_with(
         }
     };
     let conn = Connection::connect_to_env().map_err(err)?;
+    stage("registered, connected");
     let (globals, queue) = registry_queue_init::<Platform>(&conn).map_err(err)?;
     let qh = queue.handle();
     let mut event_loop: EventLoop<'static, Platform> = EventLoop::try_new().map_err(err)?;
@@ -483,12 +504,15 @@ pub fn run_with(
         copyright: String::new(),
         quit_enabled: true,
     });
+    stage("platform");
     platform.a11y = Some(crate::platform::a11y::Accessibility::new(ping));
+    stage("accessibility");
     platform.app_id = app_id.to_string();
     platform
         .ui
         .set_state_dir(crate::core::restore::state_dir(app_id));
     setup(&mut platform.ui);
+    stage("setup");
     platform.process();
     let _keep = (appearance_sub, repeat_sub);
     while !platform.exit {
@@ -573,6 +597,7 @@ impl Platform {
             vk: None,
             had_windows: false,
             start: Instant::now(),
+            first_frame_done: false,
             last_tick: Instant::now(),
             exit: false,
             conn,
@@ -622,6 +647,10 @@ impl Platform {
             };
         }
         self.ui.fire_timers();
+        // The system fonts arrived from their loader: text is laid out again.
+        if crate::text::fonts::Fonts::with(|f| f.install_system()) {
+            self.ui.refresh_all();
+        }
         for _ in 0..8 {
             let requests = self.ui.take_requests();
             if requests.is_empty() {
@@ -678,6 +707,14 @@ impl Platform {
                     w.set_min_size(min.map(px));
                     w.set_max_size(max.map(px));
                     w.commit();
+                }
+            }
+            Request::SetToolbarHeight(id, h) => {
+                if let Some(w) = self.surface(id).and_then(|s| s.silica_window.as_ref()) {
+                    w.set_full_size_content(h as u32);
+                }
+                if let Some(s) = self.surface_mut(id) {
+                    s.wants_frame = true;
                 }
             }
             Request::Redraw(id) => {
@@ -981,6 +1018,9 @@ impl Platform {
     }
 
     fn configured(&mut self, id: WindowId, size: Option<Size>) {
+        if !self.first_frame_done {
+            stage("configured");
+        }
         // A toplevel's configured size stays within its limits (#245).
         let size = match (size, self.ui.window(id)) {
             (Some(sz), Some(w))
@@ -1012,6 +1052,30 @@ impl Platform {
     }
 
     fn render(&mut self, id: WindowId) {
+        self.render_frame(id);
+        if !self.first_frame_done {
+            self.first_frame_done = true;
+            // Cold start (#254 budget: 150 ms), from entering the app loop to the first
+            // frame presented.
+            let ms = RUN_START
+                .get()
+                .map_or(self.start.elapsed(), Instant::elapsed)
+                .as_secs_f64()
+                * 1000.0;
+            tracing::info!("first frame {ms:.1} ms after start ({:?})", self.renderer);
+            if std::env::var_os("VETRO_STARTUP_TIMING").is_some() {
+                eprintln!(
+                    "vetro: first frame {ms:.1} ms after start ({:?})",
+                    self.renderer
+                );
+            }
+        }
+    }
+
+    fn render_frame(&mut self, id: WindowId) {
+        if !self.first_frame_done {
+            stage("first render begins");
+        }
         let now = Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f64();
         self.last_tick = now;
@@ -1100,7 +1164,10 @@ impl Platform {
             return false;
         };
         if self.vk.is_none() {
-            match crate::render::vulkan::VkContext::new(&self.conn, &wl) {
+            stage("vulkan: creating the context");
+            let made = crate::render::vulkan::VkContext::new(&self.conn, &wl);
+            stage("vulkan: context");
+            match made {
                 Ok((ctx, w)) => {
                     tracing::info!("renderer: Skia Vulkan on {}", ctx.renderer());
                     self.vk = Some(ctx);

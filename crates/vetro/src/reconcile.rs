@@ -260,10 +260,22 @@ fn apply_effects(view: &KitView, state: &mut EffectState, want: &Effects, sched:
     present_alert(view, &mut state.alert, want.alert.as_ref());
     if let Some(h) = want.toolbar
         && state.toolbar != Some(h)
-        && let Some(w) = view.window()
-        && w.set_toolbar_height(h).is_ok()
     {
         state.toolbar = Some(h);
+        match view.window() {
+            Some(w) => {
+                let _ = w.set_toolbar_height(h);
+            }
+            // A view being built is not in its window yet: right after this turn it is.
+            None => {
+                let v = view.clone();
+                let _ = vetro_kit::after(0.0, move || {
+                    if let Some(w) = v.window() {
+                        let _ = w.set_toolbar_height(h);
+                    }
+                });
+            }
+        }
     }
 }
 

@@ -98,6 +98,9 @@ pub enum Request {
     Resize(WindowId, Size),
     /// The minimum and maximum size changed.
     SetSizeLimits(WindowId, Option<Size>, Option<Size>),
+    /// The window's content goes under the window buttons; its toolbar is this tall
+    /// (silica-window-v1 full-size content; 0: a regular title bar).
+    SetToolbarHeight(WindowId, f32),
     /// A frame is wanted.
     Redraw(WindowId),
     /// The pointer shape.
@@ -1031,6 +1034,33 @@ impl Ui {
         {
             self.resize_window(window, inside, scale);
             self.requests.push(Request::Resize(window, inside));
+        }
+    }
+
+    /// Full-size content with a toolbar of `height` (0: the regular title bar), also on a
+    /// window already shown.
+    pub fn set_toolbar_height(&mut self, window: WindowId, height: f32) {
+        let h = if height.is_finite() {
+            height.clamp(0.0, 200.0)
+        } else {
+            0.0
+        };
+        if let Some(win) = self.window_mut(window) {
+            if win.toolbar_height == h && win.full_size_content == (h > 0.0) {
+                return;
+            }
+            win.toolbar_height = h;
+            win.full_size_content = h > 0.0;
+        }
+        self.requests.push(Request::SetToolbarHeight(window, h));
+    }
+
+    /// Lays out and records every window again (the fonts changed).
+    pub fn refresh_all(&mut self) {
+        let roots: Vec<ViewId> = self.windows.iter().map(|w| w.root).collect();
+        for r in roots {
+            self.request_paint_subtree(r);
+            self.request_layout(r);
         }
     }
 

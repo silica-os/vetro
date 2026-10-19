@@ -3,7 +3,10 @@
 //! the fallback (Noto Color Emoji, CJK).
 
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, TryRecvError};
 
+use skia_safe::ConditionallySend;
 use skia_safe::textlayout::{FontCollection, TypefaceFontProvider};
 use skia_safe::{Data, FontMgr, FontStyle, Typeface, font_style};
 
@@ -54,6 +57,29 @@ pub const MONO_FAMILY: &str = "JetBrains Mono";
 pub struct Fonts {
     collection: FontCollection,
     bundled: Vec<(String, u16, Typeface)>,
+    /// The system font manager (fontconfig): made on a thread of its own, since scanning
+    /// the fonts can take a second (a cold cache) and the first frame needs only the
+    /// bundled faces.
+    system: System,
+}
+
+enum System {
+    /// Not wanted (deterministic rendering).
+    Off,
+    /// Being made.
+    Loading(Receiver<skia_safe::Sendable<FontMgr>>),
+    /// Ready (and installed as the collection's fallback).
+    Ready(FontMgr),
+    /// The loader failed: no system fonts.
+    Failed,
+}
+
+/// Bumped when the fonts change (the system fonts are loaded): text is laid out again.
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// The fonts' generation (layouts made with an older one are stale).
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::Relaxed)
 }
 
 thread_local! {
@@ -62,7 +88,8 @@ thread_local! {
 
 impl Fonts {
     fn new(system_fallback: bool) -> Fonts {
-        let loader = FontMgr::new();
+        // The bundled faces load without scanning the system's fonts.
+        let loader = FontMgr::custom_empty().unwrap_or_else(FontMgr::empty);
         let mut provider = TypefaceFontProvider::new();
         let mut bundled = Vec::new();
         for (family, weight, bytes) in BUNDLED {
@@ -77,16 +104,66 @@ impl Fonts {
         let mut collection = FontCollection::new();
         let provider: FontMgr = provider.into();
         collection.set_asset_font_manager(Some(provider));
-        if system_fallback {
-            collection.set_dynamic_font_manager(Some(loader));
-        } else {
-            collection.set_dynamic_font_manager(None);
-        }
+        collection.set_dynamic_font_manager(None);
         collection.enable_font_fallback();
-        Fonts {
+        let system = if system_fallback {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let spawned = std::thread::Builder::new()
+                .name("vetro-fonts".into())
+                .spawn(move || {
+                    let mgr = FontMgr::new();
+                    // Touch the configuration so the scan happens here.
+                    let _ = mgr.count_families();
+                    if let Ok(m) = mgr.wrap_send() {
+                        let _ = tx.send(m);
+                    }
+                });
+            match spawned {
+                Ok(_) => System::Loading(rx),
+                Err(_) => System::Ready(FontMgr::new()),
+            }
+        } else {
+            System::Off
+        };
+        let mut f = Fonts {
             collection,
             bundled,
+            system,
+        };
+        f.install_system();
+        f
+    }
+
+    /// The system font manager when it is ready (`wait`: block until it is).
+    fn system(&mut self, wait: bool) -> Option<FontMgr> {
+        if let System::Loading(rx) = &self.system {
+            let got = if wait {
+                rx.recv().map_err(|_| TryRecvError::Disconnected)
+            } else {
+                rx.try_recv()
+            };
+            match got {
+                Ok(m) => self.system = System::Ready(m.into_inner()),
+                Err(TryRecvError::Empty) => return None,
+                Err(TryRecvError::Disconnected) => self.system = System::Failed,
+            }
+            if let System::Ready(m) = &self.system {
+                self.collection.set_dynamic_font_manager(Some(m.clone()));
+                self.collection.clear_caches();
+                GENERATION.fetch_add(1, Ordering::Relaxed);
+            }
         }
+        match &self.system {
+            System::Ready(m) => Some(m.clone()),
+            _ => None,
+        }
+    }
+
+    /// Installs the system fonts if they finished loading; returns whether they just did.
+    pub fn install_system(&mut self) -> bool {
+        let before = generation();
+        let _ = self.system(false);
+        generation() != before
     }
 
     /// Runs `f` with the thread's font system, creating it on first use.
@@ -94,6 +171,8 @@ impl Fonts {
         FONTS.with(|cell| {
             let mut slot = cell.borrow_mut();
             let fonts = slot.get_or_insert_with(|| Fonts::new(!deterministic()));
+            // The system fonts join the fallback once they are loaded.
+            fonts.install_system();
             f(fonts)
         })
     }
@@ -113,7 +192,7 @@ impl Fonts {
     }
 
     /// The typeface for `family` at `weight`: bundled, else from fontconfig, else Inter.
-    pub fn typeface(&self, family: &str, weight: u16, italic: bool) -> Option<Typeface> {
+    pub fn typeface(&mut self, family: &str, weight: u16, italic: bool) -> Option<Typeface> {
         if let Some(tf) = self.bundled(family, weight) {
             return Some(tf);
         }
@@ -127,8 +206,9 @@ impl Fonts {
             font_style::Width::NORMAL,
             slant,
         );
-        if !deterministic()
-            && let Some(tf) = FontMgr::new().match_family_style(family, style)
+        if let Some(tf) = self
+            .system(true)
+            .and_then(|m| m.match_family_style(family, style))
         {
             return Some(tf);
         }

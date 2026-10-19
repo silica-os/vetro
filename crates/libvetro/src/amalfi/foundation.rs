@@ -121,7 +121,7 @@ pub fn control_shadow(theme: &Theme) -> Shadow {
 /// A label laid out once and reused while its text, style and width do not change.
 #[derive(Debug, Default)]
 pub struct Label {
-    key: Option<(String, TextStyle, Align, u32, Option<usize>)>,
+    key: Option<(String, TextStyle, Align, u32, Option<usize>, u64)>,
     layout: Option<Rc<TextLayout>>,
 }
 
@@ -141,6 +141,8 @@ impl Label {
             align,
             width.to_bits(),
             max_lines,
+            // Laid out again when the system fonts join the fallback.
+            crate::text::fonts::generation(),
         );
         if self.key.as_ref() == Some(&key)
             && let Some(l) = &self.layout

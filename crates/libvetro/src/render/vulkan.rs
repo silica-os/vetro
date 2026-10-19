@@ -2,11 +2,15 @@
 //! `VkSurfaceKHR` and swapchain per window. Ported from silica-desktop's embedder
 //! (`ffi/vulkan.rs`), which runs on the dev VM's Venus driver.
 //!
-//! Synchronisation is deliberately simple: the swapchain image is acquired with a fence and
-//! the frame is submitted with `SyncCpu::Yes`, so no semaphore crosses Skia's flush (its
-//! semaphore API is not wrapped safely by skia-safe) and nothing is reused while the GPU
-//! works. A UI frame is small; pipelining is a later optimisation. Every frame repaints the
-//! whole image (swapchain images do not keep their contents); the damage is the core's.
+//! Frames are pipelined: up to [`FRAMES_IN_FLIGHT`] frames are on the GPU while the CPU
+//! records the next. Each frame slot has an acquire semaphore, a render-done semaphore and
+//! a fence. No semaphore crosses Skia's flush (its semaphore API is not wrapped safely by
+//! skia-safe): the swapchain image is acquired with the slot's semaphore, which an empty
+//! batch waits on before Skia's work is submitted (a wait covers the commands submitted
+//! after it), and an empty batch after Skia's submits signals the render-done semaphore
+//! (a signal covers the commands submitted before it) and the slot's fence. The present
+//! waits on render-done; the CPU waits only for the slot's previous frame. Every frame
+//! repaints the whole image (swapchain images do not keep their contents).
 
 #![allow(unsafe_code)]
 
@@ -20,6 +24,20 @@ use wayland_client::protocol::wl_surface::WlSurface;
 
 const INSTANCE_EXTENSIONS: &[&CStr] = &[ash::khr::surface::NAME, ash::khr::wayland_surface::NAME];
 const DEVICE_EXTENSIONS: &[&CStr] = &[ash::khr::swapchain::NAME];
+
+/// Frames recorded ahead of the GPU.
+pub const FRAMES_IN_FLIGHT: usize = 2;
+
+/// The synchronisation objects of one frame slot.
+#[derive(Debug, Clone, Copy)]
+struct Slot {
+    /// Signalled when the swapchain image is ready to be drawn.
+    acquired: vk::Semaphore,
+    /// Signalled when the frame's GPU work is done (the present waits on it).
+    rendered: vk::Semaphore,
+    /// Signalled with `rendered`: the slot can be reused.
+    done: vk::Fence,
+}
 
 /// The process's Vulkan context.
 pub struct VkContext {
@@ -46,7 +64,8 @@ pub struct VkWindow {
     format: vk::Format,
     color_type: skia_safe::ColorType,
     extent: (i32, i32),
-    acquired: vk::Fence,
+    slots: Vec<Slot>,
+    next: usize,
 }
 
 fn err(call: &str) -> impl Fn(vk::Result) -> String + '_ {
@@ -132,8 +151,12 @@ impl VkContext {
             .with_extensions(&iext, &dexts)
             .build()
         };
+        // Fewer shader variations: fewer pipelines to compile before the first frames
+        // (seconds on slow drivers, the VM's Venus among them).
+        let mut options = gpu::ContextOptions::new();
+        options.reduced_shader_variations = true;
         let skia =
-            gpu::direct_contexts::make_vulkan(&backend, None).ok_or("Skia Vulkan context")?;
+            gpu::direct_contexts::make_vulkan(&backend, &options).ok_or("Skia Vulkan context")?;
         drop(backend);
         let ctx = VkContext {
             _drivers: drivers,
@@ -179,13 +202,54 @@ impl VkContext {
         self.window_from_surface(surface)
     }
 
-    fn window_from_surface(&self, surface: vk::SurfaceKHR) -> Result<VkWindow, String> {
-        // SAFETY: valid device.
-        let acquired = unsafe {
-            self.device
-                .create_fence(&vk::FenceCreateInfo::default(), None)
+    fn new_slot(&self) -> Result<Slot, String> {
+        // SAFETY: valid device; the objects are destroyed with the window.
+        unsafe {
+            let acquired = self
+                .device
+                .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
+                .map_err(err("vkCreateSemaphore"))?;
+            let rendered = self
+                .device
+                .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
+                .map_err(err("vkCreateSemaphore"))?;
+            let done = self
+                .device
+                .create_fence(
+                    &vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED),
+                    None,
+                )
+                .map_err(err("vkCreateFence"))?;
+            Ok(Slot {
+                acquired,
+                rendered,
+                done,
+            })
         }
-        .map_err(err("vkCreateFence"))?;
+    }
+
+    fn destroy_slot(&self, slot: Slot) {
+        // SAFETY: the queue is idle (callers wait) and the objects are ours.
+        unsafe {
+            self.device.destroy_semaphore(slot.acquired, None);
+            self.device.destroy_semaphore(slot.rendered, None);
+            self.device.destroy_fence(slot.done, None);
+        }
+    }
+
+    fn window_from_surface(&self, surface: vk::SurfaceKHR) -> Result<VkWindow, String> {
+        let mut slots = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        for _ in 0..FRAMES_IN_FLIGHT {
+            match self.new_slot() {
+                Ok(s) => slots.push(s),
+                Err(e) => {
+                    for s in slots {
+                        self.destroy_slot(s);
+                    }
+                    return Err(e);
+                }
+            }
+        }
         Ok(VkWindow {
             surface,
             swapchain: vk::SwapchainKHR::null(),
@@ -193,7 +257,8 @@ impl VkContext {
             format: vk::Format::B8G8R8A8_UNORM,
             color_type: skia_safe::ColorType::BGRA8888,
             extent: (0, 0),
-            acquired,
+            slots,
+            next: 0,
         })
     }
 
@@ -205,8 +270,24 @@ impl VkContext {
             if w.swapchain != vk::SwapchainKHR::null() {
                 self.swapchain_fn.destroy_swapchain(w.swapchain, None);
             }
-            self.device.destroy_fence(w.acquired, None);
             self.surface_fn.destroy_surface(w.surface, None);
+        }
+        for s in w.slots {
+            self.destroy_slot(s);
+        }
+    }
+
+    /// Replaces a slot whose semaphores may be left signalled (a present that failed).
+    fn reset_slot(&self, w: &mut VkWindow, i: usize) {
+        // SAFETY: valid queue.
+        unsafe {
+            let _ = self.device.queue_wait_idle(self.queue);
+        }
+        if let Ok(fresh) = self.new_slot()
+            && let Some(slot) = w.slots.get_mut(i)
+        {
+            let old = std::mem::replace(slot, fresh);
+            self.destroy_slot(old);
         }
     }
 
@@ -317,40 +398,50 @@ impl VkContext {
         if w.swapchain == vk::SwapchainKHR::null() || w.extent != size {
             self.rebuild(w, size)?;
         }
-        // SAFETY: valid swapchain and fence; the fence is unsignalled (reset after waiting).
-        let index = unsafe {
-            match self.swapchain_fn.acquire_next_image(
-                w.swapchain,
-                1_000_000_000,
-                vk::Semaphore::null(),
-                w.acquired,
-            ) {
-                Ok((i, _)) => i,
-                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                    self.rebuild(w, size)?;
-                    self.swapchain_fn
-                        .acquire_next_image(
-                            w.swapchain,
-                            1_000_000_000,
-                            vk::Semaphore::null(),
-                            w.acquired,
-                        )
-                        .map_err(err("vkAcquireNextImageKHR"))?
-                        .0
-                }
-                Err(e) => return Err(format!("vkAcquireNextImageKHR: {e:?}")),
-            }
+        let slot_index = w.next % w.slots.len().max(1);
+        let Some(slot) = w.slots.get(slot_index).copied() else {
+            return Err("no frame slot".into());
         };
-        // SAFETY: the fence was given to the acquire above.
+        // The slot's previous frame must be done before its objects are reused.
+        // SAFETY: the slot's fence, signalled by its last frame (or created signalled).
         unsafe {
             let _ = self
                 .device
-                .wait_for_fences(&[w.acquired], true, 1_000_000_000);
-            let _ = self.device.reset_fences(&[w.acquired]);
+                .wait_for_fences(&[slot.done], true, 1_000_000_000);
         }
+        // SAFETY: valid swapchain; the slot's acquire semaphore is unsignalled (its last
+        // wait has completed with the fence above).
+        let acquire = |this: &Self, w: &VkWindow| unsafe {
+            this.swapchain_fn.acquire_next_image(
+                w.swapchain,
+                1_000_000_000,
+                slot.acquired,
+                vk::Fence::null(),
+            )
+        };
+        let index = match acquire(self, w) {
+            Ok((i, _)) => i,
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                self.rebuild(w, size)?;
+                acquire(self, w).map_err(err("vkAcquireNextImageKHR"))?.0
+            }
+            Err(e) => return Err(format!("vkAcquireNextImageKHR: {e:?}")),
+        };
         let Some(image) = w.images.get(index as usize).copied() else {
             return Err("swapchain image index out of range".into());
         };
+        // The GPU work submitted from here on waits for the image.
+        let wait_stage = [vk::PipelineStageFlags::ALL_COMMANDS];
+        let waits = [slot.acquired];
+        let wait = vk::SubmitInfo::default()
+            .wait_semaphores(&waits)
+            .wait_dst_stage_mask(&wait_stage);
+        // SAFETY: valid queue and semaphore; the batch has no command buffers.
+        unsafe {
+            self.device
+                .queue_submit(self.queue, &[wait], vk::Fence::null())
+        }
+        .map_err(err("vkQueueSubmit (acquire)"))?;
         // SAFETY: the image belongs to the live swapchain; the info lives for the call.
         let info = unsafe {
             skvk::ImageInfo::new(
@@ -382,18 +473,38 @@ impl VkContext {
             skia_safe::surface::BackendSurfaceAccess::Present,
             &gpu::FlushInfo::default(),
         );
-        self.skia.submit(gpu::SyncCpu::Yes);
+        self.skia.submit(gpu::SyncCpu::No);
         drop(surface);
+        // Signalled once everything submitted before is done.
+        let signals = [slot.rendered];
+        let signal = vk::SubmitInfo::default().signal_semaphores(&signals);
+        // SAFETY: valid queue, semaphore and fence (waited on above, reset here).
+        unsafe {
+            let _ = self.device.reset_fences(&[slot.done]);
+            self.device
+                .queue_submit(self.queue, &[signal], slot.done)
+                .map_err(err("vkQueueSubmit (done)"))?;
+        }
+        w.next = w.next.wrapping_add(1);
         let swapchains = [w.swapchain];
         let indices = [index];
         let present = vk::PresentInfoKHR::default()
+            .wait_semaphores(&signals)
             .swapchains(&swapchains)
             .image_indices(&indices);
-        // SAFETY: the GPU work is complete (SyncCpu::Yes) and the image is in the present
+        // SAFETY: the present waits for the frame's work; the image is in the present
         // layout (Skia's Present access).
         match unsafe { self.swapchain_fn.queue_present(self.queue, &present) } {
-            Ok(_) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Ok(()),
-            Err(e) => Err(format!("vkQueuePresentKHR: {e:?}")),
+            Ok(_) => Ok(()),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                // The wait may not have happened: the slot gets fresh semaphores.
+                self.reset_slot(w, slot_index);
+                Ok(())
+            }
+            Err(e) => {
+                self.reset_slot(w, slot_index);
+                Err(format!("vkQueuePresentKHR: {e:?}"))
+            }
         }
     }
 }
