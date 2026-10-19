@@ -126,6 +126,21 @@ impl Widget for FormValue {
     fn hit(&self, _p: Point, _size: Size) -> bool {
         false
     }
+
+    fn set_prop(&mut self, prop: Prop, value: &Value) -> PropChange {
+        match prop {
+            // The control fills the value column.
+            Prop::Expanded => value.as_bool().map_or(PropChange::Unknown, |b| {
+                self.expand = b;
+                PropChange::Layout
+            }),
+            _ => PropChange::Unknown,
+        }
+    }
+
+    fn accessibility(&self, a: &mut A11y) {
+        a.role = Role::Group;
+    }
 }
 
 /// A form row: the label right-aligned in a 112 pt column, then the value column.
@@ -413,6 +428,34 @@ impl Widget for FormLayout {
     fn accessibility(&self, a: &mut A11y) {
         a.role = Role::Group;
         a.label.clone_from(&self.title);
+    }
+
+    fn set_prop(&mut self, prop: Prop, value: &Value) -> PropChange {
+        match (prop, value) {
+            (Prop::Title, Value::Str(s)) => {
+                self.title = Some(s.clone()).filter(|t| !t.is_empty());
+                PropChange::Layout
+            }
+            (Prop::Title, Value::None) => {
+                self.title = None;
+                PropChange::Layout
+            }
+            (Prop::Width, v) => match v.as_f32() {
+                Some(w) if w.is_finite() && w > 0.0 => {
+                    self.width = w;
+                    PropChange::Layout
+                }
+                _ => PropChange::Unknown,
+            },
+            _ => PropChange::Unknown,
+        }
+    }
+
+    fn prop(&self, prop: Prop) -> Option<Value> {
+        match prop {
+            Prop::Title => Some(self.title.clone().map(Value::Str).unwrap_or_default()),
+            _ => None,
+        }
     }
 }
 

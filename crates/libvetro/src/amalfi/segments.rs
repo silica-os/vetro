@@ -1496,16 +1496,53 @@ impl Widget for ActionSegments {
 
     fn set_prop(&mut self, prop: Prop, value: &Value) -> PropChange {
         match prop {
-            Prop::SelectedRows => match value {
-                Value::IntList(l) => {
+            Prop::SelectedRows => match value.as_int_list() {
+                Some(l) => {
                     self.selected = l.iter().filter_map(|i| usize::try_from(*i).ok()).collect();
                     PropChange::Paint
                 }
-                _ => PropChange::Unknown,
+                None => PropChange::Unknown,
             },
             Prop::ControlSize => match value.as_int().and_then(ControlSize::from_int) {
                 Some(s) => {
                     self.size = s;
+                    PropChange::Layout
+                }
+                None => PropChange::Unknown,
+            },
+            // Through the ABI: icon segments from symbols (their accessible labels from
+            // `Items`), or text segments from `Items` alone.
+            Prop::ItemSymbols => match value.as_str_list() {
+                Some(l) => {
+                    let labels: Vec<String> = self
+                        .segments
+                        .iter()
+                        .map(|s| s.label.clone().unwrap_or_default())
+                        .collect();
+                    self.segments = l
+                        .iter()
+                        .enumerate()
+                        .map(|(i, sym)| {
+                            Segment::icon(sym, labels.get(i).map_or("", String::as_str))
+                        })
+                        .collect();
+                    PropChange::Layout
+                }
+                None => PropChange::Unknown,
+            },
+            Prop::Items => match value.as_str_list() {
+                Some(l) => {
+                    let icons = self
+                        .segments
+                        .iter()
+                        .any(|s| matches!(s.content, Content::Icon(_)));
+                    if icons {
+                        for (s, label) in self.segments.iter_mut().zip(l) {
+                            s.label = Some(label.clone());
+                        }
+                    } else {
+                        self.segments = l.iter().map(|t| Segment::text(t)).collect();
+                    }
                     PropChange::Layout
                 }
                 None => PropChange::Unknown,

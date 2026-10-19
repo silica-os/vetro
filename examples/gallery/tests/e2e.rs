@@ -132,7 +132,7 @@ fn gallery_in_ossido_headless() {
             &format!("y={}", y + dy),
         ]);
     };
-    click(52.0, 38.0);
+    click(52.0, 90.0);
     let start = Instant::now();
     loop {
         if gallery.0.try_wait().unwrap().is_some() {

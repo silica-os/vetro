@@ -27,6 +27,7 @@ pub mod theme;
 pub mod titlebars;
 pub mod toggles;
 pub mod tokens;
+pub mod toolbar;
 pub mod tooltips;
 pub mod wells;
 pub mod windows;

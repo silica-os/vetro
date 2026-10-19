@@ -281,6 +281,9 @@ pub(crate) struct Effects {
     pub(crate) sheet: Option<Presentation>,
     pub(crate) popover: Option<Presentation>,
     pub(crate) alert: Option<AlertEffect>,
+    /// The window's toolbar height (full-size content: Ossido draws the window buttons
+    /// over it).
+    pub(crate) toolbar: Option<f32>,
 }
 
 /// An element: a view to make, its properties, handlers and children.
@@ -673,6 +676,17 @@ impl Element {
             dismissed: Some(Rc::new(move || b.set(false))),
         });
         self
+    }
+
+    /// Puts `bar` (a [`crate::controls::toolbar`]) above this content and makes the window's
+    /// content full size, so the window buttons sit in the toolbar's first piece.
+    pub fn toolbar(self, bar: Element) -> Element {
+        let mut col = crate::column((bar, self.fill()))
+            .spacing(0.0)
+            .alignment(0)
+            .fill();
+        col.effects.toolbar = Some(52.0);
+        col
     }
 
     /// Presents `alert` as a sheet of this view's window while `presented` is true; a

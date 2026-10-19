@@ -49,6 +49,26 @@ impl Widget for BoxSurface {
         "BoxSurface"
     }
 
+    fn set_prop(&mut self, prop: Prop, value: &Value) -> PropChange {
+        match prop {
+            Prop::Spacing => match value.as_f32() {
+                Some(s) if s.is_finite() && s >= 0.0 => {
+                    self.spacing = s;
+                    PropChange::Layout
+                }
+                _ => PropChange::Unknown,
+            },
+            _ => PropChange::Unknown,
+        }
+    }
+
+    fn prop(&self, prop: Prop) -> Option<Value> {
+        match prop {
+            Prop::Spacing => Some(Value::from(self.spacing)),
+            _ => None,
+        }
+    }
+
     fn measure(&mut self, cx: &mut LayoutCx<'_>, p: Proposal) -> Size {
         let pad = metrics::PADDING;
         let inner = p

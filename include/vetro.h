@@ -316,6 +316,11 @@ typedef void (*VetroAlertFn)(int64_t response, void *user);
 #define VETRO_KIND_GRID_VIEW 54u
 #define VETRO_KIND_TAB_VIEW 55u
 #define VETRO_KIND_STATUS_ITEM 56u
+#define VETRO_KIND_TOOLBAR 57u
+#define VETRO_KIND_TOOLBAR_GROUP 58u
+#define VETRO_KIND_FORM_VALUE 59u
+#define VETRO_KIND_FORM_FOOTER 60u
+#define VETRO_KIND_BOX_SURFACE 61u
 
 /* Window kinds. */
 #define VETRO_WINDOW_NORMAL 1u

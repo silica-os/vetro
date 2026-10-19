@@ -184,6 +184,101 @@ pub fn toolbar_button(symbol: &str) -> Element {
     Element::of(Kind::TOOLBAR_BUTTON).symbol(symbol)
 }
 
+/// A toolbar's glass capsule of icon segments (back and forward, an item group): `items`
+/// are (symbol, accessible label); `action` gets the index of the segment pressed.
+pub fn toolbar_group(items: &[(&str, &str)], action: impl Fn(usize) + 'static) -> Element {
+    let symbols: Vec<&str> = items.iter().map(|i| i.0).collect();
+    let labels: Vec<&str> = items.iter().map(|i| i.1).collect();
+    Element::of(Kind::TOOLBAR_GROUP)
+        .prop(Prop::ITEM_SYMBOLS, list(&symbols))
+        .prop(Prop::ITEMS, list(&labels))
+        .on(Signal::ACTIVATED, move |v| {
+            if let Value::Int(i) = v
+                && let Ok(i) = usize::try_from(*i)
+            {
+                action(i);
+            }
+        })
+}
+
+/// A toolbar's title (kit `Piece/Title`: Headline, 8 in).
+pub fn toolbar_title(title: &str) -> Element {
+    crate::label(title)
+        .text_style("Headline")
+        .padding_xy(4.0, 0.0)
+}
+
+/// A toolbar's search capsule (kit `Piece/Search`: 200 wide).
+pub fn toolbar_search(placeholder: &str, text: &Binding<String>) -> Element {
+    search_field(placeholder, text).width(200.0)
+}
+
+/// A window's toolbar of `items` (toolbar buttons, groups, a title, a search, `spacer()`s
+/// sharing the free width), laid out as the kit's pieces after the window controls. See
+/// [`Element::toolbar`].
+pub fn toolbar(items: impl crate::IntoChildren) -> Element {
+    Element::of(Kind::TOOLBAR).children(items).fill_width()
+}
+
+/// A form (kit `Forms/Layout`): a window-coloured panel with a title and its parts (sections,
+/// then the footer) 20 apart.
+pub fn form(title: Option<&str>, parts: impl crate::IntoChildren) -> Element {
+    let e = Element::of(Kind::FORM);
+    match title {
+        Some(t) => e.prop(Prop::TITLE, s(t)),
+        None => e,
+    }
+    .children(parts)
+}
+
+/// A form section (kit `Forms/Section`): a titled group box of rows 12 apart.
+pub fn form_section(title: Option<&str>, rows: impl crate::IntoChildren) -> Element {
+    let surface = Element::of(Kind::BOX_SURFACE)
+        .prop(Prop::SPACING, PValue::Float(12.0))
+        .id("Group")
+        .children(rows);
+    group_box(title, surface)
+}
+
+/// A form row (kit `Forms/Row`): `label` right-aligned in the label column, then `control`.
+pub fn form_row(label: &str, control: Element) -> Element {
+    form_row_with(label, control, None, false)
+}
+
+/// A form row with a help (or error) message under the control; `expand` makes the control
+/// fill the value column (text fields, labelled switches).
+pub fn form_row_with(
+    label: &str,
+    control: Element,
+    message: Option<(&str, bool)>,
+    expand: bool,
+) -> Element {
+    let mut value = Element::of(Kind::FORM_VALUE)
+        .prop(Prop::EXPANDED, PValue::Bool(expand))
+        .children(control);
+    if let Some((text, error)) = message {
+        let color = if error {
+            "Text/Secondary"
+        } else {
+            "Text/Tertiary"
+        };
+        value = value.children(
+            crate::label(text)
+                .text_style("Caption")
+                .color(color)
+                .prop(Prop::WRAPS, PValue::Bool(true)),
+        );
+    }
+    Element::of(Kind::FORM_ROW)
+        .prop(Prop::TITLE, s(label))
+        .children(value)
+}
+
+/// A form's footer (kit `Forms/Footer`): its buttons at the end, 8 apart.
+pub fn form_footer(buttons: impl crate::IntoChildren) -> Element {
+    Element::of(Kind::FORM_FOOTER).children(buttons)
+}
+
 /// A help button.
 pub fn help_button() -> Element {
     Element::of(Kind::HELP_BUTTON)

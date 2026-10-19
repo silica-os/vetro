@@ -394,3 +394,66 @@ fn collections_keep_their_state_across_renders() {
     let g = host.find("grid").unwrap();
     assert_eq!(g, grid);
 }
+
+struct Settings;
+
+impl Component for Settings {
+    fn body(&self, cx: &mut Cx) -> Element {
+        let on = cx.state(|| true);
+        let name = cx.state(|| "Studio".to_string());
+        form(
+            Some("Sharing"),
+            (
+                form_section(
+                    Some("Computer"),
+                    (
+                        form_row_with(
+                            "Name:",
+                            text_field("Name", &name.binding()).id("name"),
+                            Some(("Other computers see this name.", false)),
+                            true,
+                        )
+                        .id("row"),
+                        form_row("Visible:", switch(&on.binding())),
+                    ),
+                ),
+                form_footer((button("Cancel"), button("Done").style(0))),
+            ),
+        )
+        .id("form")
+        .toolbar(
+            toolbar((
+                toolbar_title("Settings").id("title"),
+                spacer(),
+                toolbar_button("gear").id("gear"),
+            ))
+            .id("bar"),
+        )
+    }
+}
+
+#[test]
+fn forms_and_toolbars_build_the_kit_pieces() {
+    let _rt = Headless::new().unwrap();
+    let w = vetro_kit::Window::new(600.0, 500.0).unwrap();
+    let h = vetro_kit::View::new(vetro_kit::Kind::VIEW).unwrap();
+    h.set_float(Prop::MAX_WIDTH, f64::INFINITY).unwrap();
+    h.set_float(Prop::MAX_HEIGHT, f64::INFINITY).unwrap();
+    w.set_content(&h).unwrap();
+    w.show().unwrap();
+    let root = mount(h, || Settings);
+    w.snapshot_png(1.0).unwrap();
+    let host = root.host();
+    let bar = host.find("bar").unwrap().frame().unwrap();
+    assert_eq!(bar.height, 52.0);
+    let gear = host.find("gear").unwrap().frame().unwrap();
+    assert_eq!(bar.x + bar.width - (gear.x + gear.width), 16.0);
+    let title = host.find("title").unwrap().frame().unwrap();
+    assert_eq!(title.x - bar.x, 100.0);
+    let field = host.find("name").unwrap().frame().unwrap();
+    let row = host.find("row").unwrap().frame().unwrap();
+    // The control starts after the 112 pt label column and the 12 pt gap, and fills 204.
+    assert_eq!(field.x - row.x, 124.0);
+    assert_eq!(field.width, 204.0);
+    assert!(host.find("form").unwrap().frame().unwrap().y >= bar.y + 52.0);
+}

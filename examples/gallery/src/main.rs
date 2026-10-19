@@ -39,20 +39,27 @@ impl Component for Gallery {
             1 => component(Collections),
             _ => component(Windows),
         };
+        let search = cx.state(String::new);
+        let bar = toolbar((
+            toolbar_title("Vetro Gallery"),
+            spacer(),
+            segmented(&["Controls", "Collections", "Windows"], &page.binding()).id("pages"),
+            spacer(),
+            toolbar_button("doc-plus")
+                .accessibility_label("Open Sheet")
+                .id("open-sheet")
+                .on_activate(move || s2.set(true)),
+            toolbar_search("Search", &search.binding()),
+        ));
         column((
             row((
                 button("Quit")
                     .style(0)
                     .id("quit")
                     .on_activate(vetro::kit::quit),
-                label("Vetro Gallery").text_style("Title 2").priority(1.0),
-                spacer(),
-                segmented(&["Controls", "Collections", "Windows"], &page.binding()).id("pages"),
-                spacer(),
-                button("Open Sheet").on_activate(move || s2.set(true)),
+                label("Components of the Amalfi kit on Vetro.").color("Text/Secondary"),
             ))
-            .spacing(16.0)
-            .fill_width(),
+            .spacing(16.0),
             content.fill(),
         ))
         .spacing(18.0)
@@ -60,6 +67,7 @@ impl Component for Gallery {
         .padding(24.0)
         .fill()
         .align(0)
+        .toolbar(bar)
         .context_menu(vec![
             MenuEntry::item("Toggle Appearance", || {
                 let _ = vetro::kit::set_dark(!vetro::kit::is_dark());

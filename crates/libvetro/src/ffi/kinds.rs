@@ -97,6 +97,13 @@ pub fn make(kind: u32) -> Option<Box<dyn Widget>> {
         VETRO_KIND_STATUS_ITEM => Box::new(crate::amalfi::statusbar::StatusItem::new(
             crate::amalfi::statusbar::ItemContent::Glyph(String::new()),
         )),
+        VETRO_KIND_TOOLBAR => Box::new(crate::amalfi::toolbar::Toolbar::default()),
+        VETRO_KIND_TOOLBAR_GROUP => {
+            Box::new(crate::amalfi::segments::ActionSegments::new(Vec::new()))
+        }
+        VETRO_KIND_FORM_VALUE => Box::new(crate::amalfi::forms::FormValue { expand: false }),
+        VETRO_KIND_FORM_FOOTER => Box::new(crate::amalfi::forms::FormFooter),
+        VETRO_KIND_BOX_SURFACE => Box::new(crate::amalfi::group_box::BoxSurface::default()),
         _ => return None,
     })
 }
@@ -122,6 +129,9 @@ mod tests {
             VETRO_KIND_FORM,
             VETRO_KIND_FORM_ROW,
             VETRO_KIND_TAB_VIEW,
+            VETRO_KIND_FORM_VALUE,
+            VETRO_KIND_FORM_FOOTER,
+            VETRO_KIND_BOX_SURFACE,
         ];
         let mut missing = Vec::new();
         for (name, kind) in vetro_sys::KINDS {

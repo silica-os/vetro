@@ -198,4 +198,9 @@ impl Kind {
     pub const GRID_VIEW: Kind = Kind(sys::VETRO_KIND_GRID_VIEW);
     pub const TAB_VIEW: Kind = Kind(sys::VETRO_KIND_TAB_VIEW);
     pub const STATUS_ITEM: Kind = Kind(sys::VETRO_KIND_STATUS_ITEM);
+    pub const TOOLBAR: Kind = Kind(sys::VETRO_KIND_TOOLBAR);
+    pub const TOOLBAR_GROUP: Kind = Kind(sys::VETRO_KIND_TOOLBAR_GROUP);
+    pub const FORM_VALUE: Kind = Kind(sys::VETRO_KIND_FORM_VALUE);
+    pub const FORM_FOOTER: Kind = Kind(sys::VETRO_KIND_FORM_FOOTER);
+    pub const BOX_SURFACE: Kind = Kind(sys::VETRO_KIND_BOX_SURFACE);
 }

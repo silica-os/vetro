@@ -61,6 +61,7 @@ struct EffectState {
     sheet: Option<Shown>,
     popover: Option<Shown>,
     alert: Option<vetro_kit::Window>,
+    toolbar: Option<f32>,
 }
 
 /// A rendered element.
@@ -257,6 +258,13 @@ fn apply_effects(view: &KitView, state: &mut EffectState, want: &Effects, sched:
     present(view, &mut state.sheet, want.sheet.as_ref(), true);
     present(view, &mut state.popover, want.popover.as_ref(), false);
     present_alert(view, &mut state.alert, want.alert.as_ref());
+    if let Some(h) = want.toolbar
+        && state.toolbar != Some(h)
+        && let Some(w) = view.window()
+        && w.set_toolbar_height(h).is_ok()
+    {
+        state.toolbar = Some(h);
+    }
 }
 
 /// Shows or dismisses an element's alert.
