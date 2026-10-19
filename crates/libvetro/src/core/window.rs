@@ -166,10 +166,19 @@ pub struct Window {
     /// The app handles [`crate::core::value::Signal::CloseRequested`] itself (a document
     /// that asks to save); otherwise the close button closes the window.
     pub keep_on_close_request: bool,
+    /// Opaque: painted with `Surface/Window` under the content (Amalfi windows are flat and
+    /// opaque; popups and shell surfaces are transparent).
+    pub opaque: bool,
+    /// The compositor draws the glass regions (popups, shell surfaces, transparent panels).
+    pub compositor_glass: bool,
+    /// Height of the toolbar the app draws under Ossido's window buttons (full-size
+    /// content; 0: Ossido's title bar).
+    pub toolbar_height: f32,
 }
 
 impl Window {
     pub(crate) fn new(id: WindowId, root: ViewId, kind: WindowKind, size: Size) -> Self {
+        let kind_ref = kind.clone();
         Window {
             id,
             root,
@@ -194,6 +203,15 @@ impl Window {
             last_click: (f64::NEG_INFINITY, Point::ZERO, 0),
             keyboard_navigation: false,
             keep_on_close_request: false,
+            compositor_glass: kind_glass(&kind_ref),
+            opaque: !kind_glass(&kind_ref) && !matches!(kind_ref, WindowKind::Lock { .. }),
+            toolbar_height: 0.0,
         }
     }
+}
+
+/// Whether windows of `kind` float over something they do not draw (their glass is the
+/// compositor's).
+fn kind_glass(kind: &WindowKind) -> bool {
+    matches!(kind, WindowKind::Popup { .. } | WindowKind::Shell { .. })
 }

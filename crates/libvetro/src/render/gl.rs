@@ -47,16 +47,16 @@ pub struct GlWindow {
 
 impl GlContext {
     /// Creates the context on the connection's display.
-    pub fn new(display_ptr: *mut c_void, probe: &WlSurface) -> Result<GlContext, String> {
+    pub fn new(conn: &wayland_client::Connection, probe: &WlSurface) -> Result<GlContext, String> {
+        let display_ptr = conn.backend().display_ptr().cast::<c_void>();
         // SAFETY: loading libEGL runs its initialisers; nothing else runs meanwhile.
         let egl = unsafe { egl::DynamicInstance::<egl::EGL1_5>::load_required() }
             .map_err(|e| format!("libEGL: {e}"))?;
         // SAFETY: `display_ptr` is the live `wl_display` of the connection, which outlives
         // the EGL display (the platform drops the context before the connection).
-        let display = unsafe {
-            egl.get_platform_display(PLATFORM_WAYLAND, display_ptr, &[egl::ATTRIB_NONE])
-        }
-        .map_err(|e| format!("eglGetPlatformDisplay: {e}"))?;
+        let display =
+            unsafe { egl.get_platform_display(PLATFORM_WAYLAND, display_ptr, &[egl::ATTRIB_NONE]) }
+                .map_err(|e| format!("eglGetPlatformDisplay: {e}"))?;
         egl.initialize(display)
             .map_err(|e| format!("eglInitialize: {e}"))?;
         egl.bind_api(egl::OPENGL_ES_API)
@@ -85,7 +85,12 @@ impl GlContext {
             .map_err(|e| format!("eglChooseConfig: {e}"))?
             .ok_or("eglChooseConfig: no RGBA8 configuration")?;
         let context = egl
-            .create_context(display, config, None, &[egl::CONTEXT_CLIENT_VERSION, 2, egl::NONE])
+            .create_context(
+                display,
+                config,
+                None,
+                &[egl::CONTEXT_CLIENT_VERSION, 2, egl::NONE],
+            )
             .map_err(|e| format!("eglCreateContext: {e}"))?;
         // A probe surface makes the context current to create Skia's interface.
         let probe_window = WlEglSurface::new(probe.id(), 1, 1).map_err(|e| e.to_string())?;
@@ -99,8 +104,13 @@ impl GlContext {
             )
         }
         .map_err(|e| format!("eglCreatePlatformWindowSurface: {e}"))?;
-        egl.make_current(display, Some(probe_surface), Some(probe_surface), Some(context))
-            .map_err(|e| format!("eglMakeCurrent: {e}"))?;
+        egl.make_current(
+            display,
+            Some(probe_surface),
+            Some(probe_surface),
+            Some(context),
+        )
+        .map_err(|e| format!("eglMakeCurrent: {e}"))?;
         let _ = egl.swap_interval(display, 0);
         let interface = skgl::Interface::new_load_with(|name| {
             egl.get_proc_address(name)
@@ -116,7 +126,9 @@ impl GlContext {
         let swap_with_damage = if extensions.contains("EGL_KHR_swap_buffers_with_damage") {
             egl.get_proc_address("eglSwapBuffersWithDamageKHR")
                 // SAFETY: the extension's entry point has this signature.
-                .map(|f| unsafe { std::mem::transmute::<extern "system" fn(), SwapWithDamageFn>(f) })
+                .map(|f| unsafe {
+                    std::mem::transmute::<extern "system" fn(), SwapWithDamageFn>(f)
+                })
         } else {
             None
         };
@@ -193,7 +205,12 @@ impl GlContext {
             w.history.clear();
         }
         self.egl
-            .make_current(self.display, Some(w.surface), Some(w.surface), Some(self.context))
+            .make_current(
+                self.display,
+                Some(w.surface),
+                Some(w.surface),
+                Some(self.context),
+            )
             .map_err(|e| format!("eglMakeCurrent: {e}"))?;
         let age = if self.buffer_age {
             self.egl
@@ -253,12 +270,7 @@ impl GlContext {
                 ];
                 // SAFETY: display and surface are live; `rect` holds one rectangle.
                 unsafe {
-                    swap(
-                        self.display.as_ptr(),
-                        w.surface.as_ptr(),
-                        rect.as_ptr(),
-                        1,
-                    ) == egl::TRUE
+                    swap(self.display.as_ptr(), w.surface.as_ptr(), rect.as_ptr(), 1) == egl::TRUE
                 }
             }
             _ => self.egl.swap_buffers(self.display, w.surface).is_ok(),

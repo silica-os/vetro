@@ -33,6 +33,23 @@ pub enum DisplayItem {
         /// Style.
         style: Style,
     },
+    /// A glass surface the compositor draws when the window's backdrop is outside it
+    /// (menus, popovers, the Dock: `silica-glass-v1` regions); painted by the client like a
+    /// layer otherwise (headless, nested glass, no compositor support).
+    Glass {
+        /// The kit layer's name.
+        name: Rc<str>,
+        /// Frame.
+        rect: Rect,
+        /// Outline.
+        shape: Shape,
+        /// The material as a style (blur, tint, rims, shadow).
+        style: Style,
+        /// The material's name (`Glass/Regular`, `Glass/Thick`, `Glass/Clear`).
+        material: &'static str,
+        /// The compositor profile (silica-glass-v1 `profile`).
+        profile: GlassProfile,
+    },
     /// Laid-out text.
     Text {
         /// The kit layer's name (`Label` …).
@@ -102,6 +119,14 @@ impl std::fmt::Debug for DisplayItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DisplayItem::Layer { name, rect, .. } => write!(f, "Layer({name}, {rect:?})"),
+            DisplayItem::Glass {
+                name,
+                rect,
+                material,
+                ..
+            } => {
+                write!(f, "Glass({name}, {rect:?}, {material})")
+            }
             DisplayItem::Text {
                 name, rect, layout, ..
             } => {
@@ -118,6 +143,32 @@ impl std::fmt::Debug for DisplayItem {
             DisplayItem::Custom { name, rect, .. } => write!(f, "Custom({name}, {rect:?})"),
         }
     }
+}
+
+/// The kind of surface a compositor glass region belongs to (silica-glass-v1 `profile`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum GlassProfile {
+    /// From the material.
+    Default = 0,
+    /// Menus and context menus.
+    Menu = 1,
+    /// Large panels: Notification Centre, search, Launcher.
+    Panel = 2,
+    /// Control Center modules and HUDs.
+    Module = 3,
+    /// Small controls on glass.
+    Control = 4,
+    /// The Dock and the app switcher.
+    Dock = 5,
+    /// Tooltips and labels.
+    Tooltip = 6,
+    /// Sheets and alerts.
+    Sheet = 7,
+    /// Notification banners.
+    Banner = 8,
+    /// Popovers.
+    Popover = 9,
 }
 
 /// A recorded list of items.
@@ -138,7 +189,7 @@ impl DisplayList {
         let mut r = Rect::ZERO;
         for item in &self.items {
             let b = match item {
-                DisplayItem::Layer { rect, style, .. } => {
+                DisplayItem::Layer { rect, style, .. } | DisplayItem::Glass { rect, style, .. } => {
                     let o = style.overflow();
                     rect.inflate(o, o)
                 }
@@ -164,6 +215,13 @@ impl DisplayList {
                 DisplayItem::Layer {
                     rect, shape, style, ..
                 } => paint_style(canvas, *rect, shape, style, opts),
+                DisplayItem::Glass {
+                    rect, shape, style, ..
+                } => {
+                    if !opts.compositor_glass {
+                        paint_style(canvas, *rect, shape, style, opts);
+                    }
+                }
                 DisplayItem::Text { rect, layout, .. } => layout.paint(canvas, rect.origin()),
                 DisplayItem::Glyph {
                     rect,
@@ -279,6 +337,26 @@ impl Recorder {
             rect,
             shape,
             style,
+        });
+    }
+
+    /// A glass surface (see [`DisplayItem::Glass`]).
+    pub fn glass(
+        &mut self,
+        name: &str,
+        rect: Rect,
+        shape: Shape,
+        style: Style,
+        material: &'static str,
+        profile: GlassProfile,
+    ) {
+        self.list.items.push(DisplayItem::Glass {
+            name: Rc::from(name),
+            rect,
+            shape,
+            style,
+            material,
+            profile,
         });
     }
 
@@ -447,6 +525,13 @@ impl DisplayList {
                     rect,
                     shape,
                     style,
+                }
+                | DisplayItem::Glass {
+                    name,
+                    rect,
+                    shape,
+                    style,
+                    ..
                 } => out.push(InspectedLayer {
                     path: join(name),
                     name: name.to_string(),

@@ -2,6 +2,7 @@
 
 use vetro_lib::amalfi::button::{PushButton, PushVariant};
 use vetro_lib::amalfi::foundation::ControlSize;
+use vetro_lib::core::menu::{Menu, MenuItem, PopupKind};
 use vetro_lib::core::{Alignment, Prop, Signal, Stack, Ui, Value, WindowKind};
 use vetro_lib::geom::Size;
 
@@ -13,8 +14,6 @@ fn build(ui: &mut Ui) {
     let _ = ui.set(column, Prop::MaxWidth, Value::from(f32::INFINITY));
     let _ = ui.set(column, Prop::MaxHeight, Value::from(f32::INFINITY));
     let _ = ui.set(column, Prop::FrameAlignment, Value::Int(0));
-    let bg = ui.theme_of(column).colors.surface_window;
-    let _ = ui.set(column, Prop::Background, Value::Color(bg));
     for size in [
         ControlSize::Mini,
         ControlSize::Small,
@@ -43,7 +42,61 @@ fn build(ui: &mut Ui) {
     });
     ui.add_child(column, quit);
     ui.set_content(win, column);
+    ui.connect(column, Signal::ContextMenu, |ui, v, at| {
+        let p = match at {
+            Value::Point(p) => *p,
+            _ => vetro_lib::geom::Point::ZERO,
+        };
+        let origin = ui.tree.window_origin(v);
+        let _ = ui.popup_menu(
+            v,
+            vetro_lib::geom::Rect::new(p.x - origin.x, p.y - origin.y, 0.0, 0.0),
+            PopupKind::Context,
+            0,
+            vec![
+                MenuItem::new("Copy").shortcut("cmd+c"),
+                MenuItem::new("Paste").shortcut("cmd+v"),
+                MenuItem::separator(),
+                MenuItem::new("Toggle Appearance").action(toggle_dark),
+            ],
+            None,
+        );
+    });
+    ui.set_menu_bar(vec![
+        Menu {
+            title: "Vetro Gallery".into(),
+            role: Some("app".into()),
+            items: vec![
+                MenuItem::new("About Vetro Gallery").role("about"),
+                MenuItem::separator(),
+                MenuItem::new("Quit Vetro Gallery")
+                    .shortcut("cmd+q")
+                    .role("quit")
+                    .action(|ui| ui.request(vetro_lib::core::Request::Quit)),
+            ],
+        },
+        Menu {
+            title: "View".into(),
+            role: None,
+            items: vec![
+                MenuItem::new("Toggle Appearance")
+                    .shortcut("cmd+shift+d")
+                    .action(toggle_dark),
+            ],
+        },
+        Menu {
+            title: "Window".into(),
+            role: Some("window".into()),
+            items: vec![MenuItem::new("Minimize").shortcut("cmd+m")],
+        },
+    ]);
     ui.show_window(win);
+}
+
+fn toggle_dark(ui: &mut Ui) {
+    let mut a = ui.appearance;
+    a.dark = !a.dark;
+    ui.set_appearance(a);
 }
 
 fn main() {

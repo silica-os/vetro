@@ -68,7 +68,17 @@ use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 use wayland_protocols::xdg::shell::client::xdg_positioner;
 
+use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
+use silica_protocols::glass::client::silica_glass_v1::{self, SilicaGlassV1};
+use silica_protocols::menu::client::silica_menu_manager_v1::SilicaMenuManagerV1;
+use silica_protocols::menu::client::silica_menu_v1::{self, SilicaMenuV1};
+use silica_protocols::menu::client::silica_popup_menu_v1::{self, SilicaPopupMenuV1};
+use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
+use silica_protocols::window::client::silica_window_v1::{self, SilicaWindowV1};
+
 use crate::core::event::{Button, Key, KeyEvent, Mods, Phase};
+use crate::core::menu::{MenuItem, PopupKind, PopupMenuRequest};
+use crate::core::ui::GlassRegion;
 use crate::core::ui::{Cursor, Request, Ui};
 use crate::core::window::{Edges, KeyboardMode, Layer, WindowId, WindowKind};
 use crate::geom::{Point, Rect, Size};
@@ -108,12 +118,18 @@ struct Surface {
     wants_frame: bool,
     pool: Option<SlotPool>,
     gl: Option<crate::render::gl::GlWindow>,
+    vkw: Option<crate::render::vulkan::VkWindow>,
+    silica_window: Option<SilicaWindowV1>,
+    glass: Option<SilicaGlassV1>,
+    glass_sent: Vec<GlassRegion>,
     last_frame: Instant,
 }
 
 /// The renderer chosen for this process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Renderer {
+    /// Skia on Vulkan.
+    Vulkan,
     /// Skia on GLES through EGL.
     Gl,
     /// Skia raster into shared-memory buffers.
@@ -121,11 +137,13 @@ pub enum Renderer {
 }
 
 impl Renderer {
-    /// `VETRO_RENDERER` (`gl`, `software`); GL by default, software when GL fails.
+    /// `VETRO_RENDERER` (`vulkan`, `gl`, `software`); Vulkan by default, then GL, then
+    /// software, each falling back to the next when it fails.
     fn from_env() -> Renderer {
         match std::env::var("VETRO_RENDERER").as_deref() {
             Ok("software") | Ok("shm") => Renderer::Software,
-            _ => Renderer::Gl,
+            Ok("gl") | Ok("gles") => Renderer::Gl,
+            _ => Renderer::Vulkan,
         }
     }
 }
@@ -158,6 +176,11 @@ pub struct Platform {
     cursor_shapes: Option<CursorShapeManager>,
     text_input_manager: Option<ZwpTextInputManagerV3>,
     data_devices: Option<DataDeviceManagerState>,
+    glass_manager: Option<SilicaGlassManagerV1>,
+    window_manager: Option<SilicaWindowManagerV1>,
+    menu_manager: Option<SilicaMenuManagerV1>,
+    menu: Option<SilicaMenuV1>,
+    popup_menus: Vec<(SilicaPopupMenuV1, u64)>,
     surfaces: Vec<Surface>,
     seat: Option<wl_seat::WlSeat>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
@@ -179,6 +202,7 @@ pub struct Platform {
     cursor: Cursor,
     renderer: Renderer,
     gl: Option<crate::render::gl::GlContext>,
+    vk: Option<crate::render::vulkan::VkContext>,
     app_id: String,
     had_windows: bool,
     start: Instant,
@@ -258,6 +282,11 @@ impl Platform {
             cursor_shapes: CursorShapeManager::bind(globals, &qh).ok(),
             text_input_manager: globals.bind(&qh, 1..=1, ()).ok(),
             data_devices: DataDeviceManagerState::bind(globals, &qh).ok(),
+            glass_manager: globals.bind(&qh, 1..=9, ()).ok(),
+            window_manager: globals.bind(&qh, 1..=4, ()).ok(),
+            menu_manager: globals.bind(&qh, 1..=2, ()).ok(),
+            menu: None,
+            popup_menus: Vec::new(),
             compositor,
             shm,
             surfaces: Vec::new(),
@@ -284,6 +313,7 @@ impl Platform {
             cursor: Cursor::Default,
             renderer: Renderer::from_env(),
             gl: None,
+            vk: None,
             had_windows: false,
             start: Instant::now(),
             last_tick: Instant::now(),
@@ -407,6 +437,8 @@ impl Platform {
                 }
             }
             Request::AccessibilityChanged(_) => {}
+            Request::SetMenuBar => self.send_menu_bar(),
+            Request::PopupMenu(req) => self.show_popup_menu(*req),
         }
     }
 
@@ -550,6 +582,28 @@ impl Platform {
                 Role::Lock(lock.create_lock_surface(wl, &output, &self.qh))
             }
         };
+        let wl_ref = role.wl_surface().clone();
+        let silica_window = match (&role, &self.window_manager) {
+            (Role::Toplevel(_), Some(m)) => {
+                let w = m.get_window(&wl_ref, &self.qh, ());
+                if win.full_size_content || win.toolbar_height > 0.0 {
+                    w.set_full_size_content(win.toolbar_height.clamp(0.0, 200.0) as u32);
+                }
+                if w.version() >= 3 {
+                    w.set_appearance(match win.dark_override {
+                        None => silica_window_v1::Appearance::System,
+                        Some(false) => silica_window_v1::Appearance::Light,
+                        Some(true) => silica_window_v1::Appearance::Dark,
+                    });
+                }
+                Some(w)
+            }
+            _ => None,
+        };
+        let glass = match &self.glass_manager {
+            Some(m) if win.compositor_glass => Some(m.get_glass(&wl_ref, &self.qh, ())),
+            _ => None,
+        };
         self.surfaces.push(Surface {
             id,
             role,
@@ -562,6 +616,10 @@ impl Platform {
             wants_frame: true,
             pool: None,
             gl: None,
+            vkw: None,
+            silica_window,
+            glass,
+            glass_sent: Vec::new(),
             last_frame: Instant::now(),
         });
     }
@@ -577,6 +635,15 @@ impl Platform {
             }
             if let (Some(ctx), Some(w)) = (self.gl.as_mut(), s.gl) {
                 ctx.destroy_window(w);
+            }
+            if let (Some(ctx), Some(w)) = (self.vk.as_mut(), s.vkw) {
+                ctx.destroy_window(w);
+            }
+            if let Some(w) = s.silica_window {
+                w.destroy();
+            }
+            if let Some(g) = s.glass {
+                g.destroy();
             }
             drop(s.role);
         }
@@ -615,6 +682,9 @@ impl Platform {
             self.ui.advance(dt.min(0.1));
         }
         let damage = self.ui.prepare_frame(id);
+        if self.renderer == Renderer::Vulkan && self.render_vk(id) {
+            return;
+        }
         if self.renderer == Renderer::Gl && self.render_gl(id, damage) {
             return;
         }
@@ -677,6 +747,7 @@ impl Platform {
             (d.height * scale).ceil() as i32,
         );
         wl.frame(&self.qh, wl.clone());
+        send_glass(s, self.ui.glass_regions(id));
         if buffer.attach_to(&wl).is_ok() {
             wl.commit();
         }
@@ -685,14 +756,82 @@ impl Platform {
         s.last_frame = now;
     }
 
+    /// Renders with Vulkan; false when Vulkan is unavailable (the caller falls back to GL).
+    fn render_vk(&mut self, id: WindowId) -> bool {
+        let Some(wl) = self.surface(id).map(|s| s.role.wl_surface().clone()) else {
+            return false;
+        };
+        if self.vk.is_none() {
+            match crate::render::vulkan::VkContext::new(&self.conn, &wl) {
+                Ok((ctx, w)) => {
+                    tracing::info!("renderer: Skia Vulkan on {}", ctx.renderer());
+                    self.vk = Some(ctx);
+                    if let Some(s) = self.surface_mut(id) {
+                        s.vkw = Some(w);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Vulkan unavailable ({e}): trying GL");
+                    self.renderer = Renderer::Gl;
+                    return false;
+                }
+            }
+        }
+        let regions = self.ui.glass_regions(id);
+        let Some(ctx) = self.vk.as_mut() else {
+            return false;
+        };
+        let Some(s) = self.surfaces.iter_mut().find(|s| s.id == id) else {
+            return false;
+        };
+        if s.vkw.is_none() {
+            match ctx.create_window(&wl) {
+                Ok(w) => s.vkw = Some(w),
+                Err(e) => {
+                    tracing::warn!("Vulkan window: {e}");
+                    return false;
+                }
+            }
+        }
+        let scale = s.scale.max(0.5);
+        let px = (
+            (s.size.width * scale).round().max(1.0) as i32,
+            (s.size.height * scale).round().max(1.0) as i32,
+        );
+        if let Some(vp) = &s.viewport {
+            vp.set_destination(s.size.width.round() as i32, s.size.height.round() as i32);
+        } else {
+            wl.set_buffer_scale(scale.round().max(1.0) as i32);
+        }
+        send_glass(s, regions);
+        wl.frame(&self.qh, wl.clone());
+        let Some(w) = s.vkw.as_mut() else {
+            return false;
+        };
+        let ui = &self.ui;
+        let result = ctx.render(w, px, |canvas| {
+            canvas.clear(skia_safe::Color::TRANSPARENT);
+            canvas.save();
+            canvas.scale((scale, scale));
+            ui.paint_window(id, canvas, None);
+            canvas.restore();
+        });
+        if let Err(e) = result {
+            tracing::warn!("Vulkan frame: {e}");
+        }
+        s.frame_pending = true;
+        s.wants_frame = self.ui.is_animating();
+        s.last_frame = Instant::now();
+        true
+    }
+
     /// Renders with GL; false when GL is unavailable (the caller falls back to shm).
     fn render_gl(&mut self, id: WindowId, damage: Rect) -> bool {
         let Some(wl) = self.surface(id).map(|s| s.role.wl_surface().clone()) else {
             return false;
         };
         if self.gl.is_none() {
-            let ptr = self.conn.backend().display_ptr().cast::<std::ffi::c_void>();
-            match crate::render::gl::GlContext::new(ptr, &wl) {
+            match crate::render::gl::GlContext::new(&self.conn, &wl) {
                 Ok(ctx) => {
                     tracing::info!("renderer: Skia GL on {}", ctx.renderer());
                     self.gl = Some(ctx);
@@ -724,9 +863,9 @@ impl Platform {
                 }
             }
         }
-        let Some(glw) = s.gl.as_mut() else {
+        if s.gl.is_none() {
             return false;
-        };
+        }
         if let Some(vp) = &s.viewport {
             vp.set_destination(s.size.width.round() as i32, s.size.height.round() as i32);
         } else {
@@ -742,6 +881,19 @@ impl Platform {
                 damage.height * scale,
             )
             .round_out(1.0)
+        };
+        let regions = self.ui.glass_regions(id);
+        if let Some(s) = self.surfaces.iter_mut().find(|s| s.id == id) {
+            send_glass(s, regions);
+        }
+        let Some(ctx) = self.gl.as_mut() else {
+            return false;
+        };
+        let Some(s) = self.surfaces.iter_mut().find(|s| s.id == id) else {
+            return false;
+        };
+        let Some(glw) = s.gl.as_mut() else {
+            return false;
         };
         wl.frame(&self.qh, wl.clone());
         let ui = &self.ui;
@@ -764,6 +916,63 @@ impl Platform {
         s.wants_frame = self.ui.is_animating();
         s.last_frame = Instant::now();
         true
+    }
+
+    fn send_menu_bar(&mut self) {
+        let Some(mgr) = &self.menu_manager else {
+            return;
+        };
+        let menu = self
+            .menu
+            .get_or_insert_with(|| mgr.get_menu(&self.qh, ()))
+            .clone();
+        let model = crate::core::menu::bar_model(self.ui.menu_bar());
+        let Ok(json) = serde_json::to_vec(&model) else {
+            return;
+        };
+        if json.is_empty() || json.len() > silica_protocols::menu::MAX_MODEL_SIZE {
+            tracing::warn!("menu model of {} bytes not sent", json.len());
+            return;
+        }
+        match memfd_with(&json) {
+            Ok(fd) => {
+                use std::os::fd::AsFd;
+                menu.set_model(fd.as_fd(), json.len() as u32);
+            }
+            Err(e) => tracing::warn!("menu model: {e}"),
+        }
+    }
+
+    fn show_popup_menu(&mut self, req: PopupMenuRequest) {
+        let (Some(mgr), Some(wl)) = (
+            self.menu_manager.as_ref().filter(|m| m.version() >= 2),
+            self.surface(req.window)
+                .map(|s| s.role.wl_surface().clone()),
+        ) else {
+            // No menu service: the menu cannot be shown (in-process menus are the
+            // components' fallback, not the platform's).
+            self.ui.popup_menu_result(req.token, None);
+            return;
+        };
+        let kind = match req.kind {
+            PopupKind::Context => silica_menu_v1_popup_kind_context(),
+            PopupKind::PopUp => silica_menu_v1_popup_kind_popup(),
+        };
+        let a = req.anchor;
+        let menu = mgr.get_popup_menu(
+            &wl,
+            kind,
+            a.x.round() as i32,
+            a.y.round() as i32,
+            a.width.round() as i32,
+            a.height.round() as i32,
+            req.selected,
+            &self.qh,
+            req.token,
+        );
+        add_rows(&menu, &req.items);
+        menu.show();
+        self.popup_menus.push((menu, req.token));
     }
 
     fn apply_cursor(&self) {
@@ -903,6 +1112,147 @@ impl Platform {
             self.loop_handle.remove(t);
         }
     }
+}
+
+fn silica_menu_v1_popup_kind_context()
+-> silica_protocols::menu::client::silica_menu_manager_v1::PopupKind {
+    silica_protocols::menu::client::silica_menu_manager_v1::PopupKind::Context
+}
+
+fn silica_menu_v1_popup_kind_popup()
+-> silica_protocols::menu::client::silica_menu_manager_v1::PopupKind {
+    silica_protocols::menu::client::silica_menu_manager_v1::PopupKind::PopUp
+}
+
+/// The rows of a pop-up menu in document order.
+fn add_rows(menu: &SilicaPopupMenuV1, items: &[MenuItem]) {
+    use silica_popup_menu_v1::{Flags, Modifiers};
+    for it in items {
+        if it.separator {
+            menu.add_separator();
+            continue;
+        }
+        if it.heading {
+            menu.add_section(it.title.clone());
+            continue;
+        }
+        let mut flags = Flags::empty();
+        if !it.enabled {
+            flags |= Flags::Disabled;
+        }
+        match it.checked {
+            Some(true) => flags |= Flags::Checked,
+            Some(false) => flags |= Flags::Mixed,
+            None => {}
+        }
+        if it.destructive {
+            flags |= Flags::Destructive;
+        }
+        let icon = it.icon.clone().unwrap_or_default();
+        if let Some(sub) = &it.submenu {
+            menu.begin_submenu(it.title.clone(), flags, icon);
+            add_rows(menu, sub);
+            menu.end_submenu();
+            continue;
+        }
+        let (key, mods) = match it
+            .shortcut
+            .as_deref()
+            .and_then(crate::core::event::Shortcut::parse)
+        {
+            Some(sc) => {
+                let mut m = Modifiers::empty();
+                if sc.mods.contains(Mods::LOGO) {
+                    m |= Modifiers::Meta;
+                }
+                if sc.mods.contains(Mods::CTRL) {
+                    m |= Modifiers::Ctrl;
+                }
+                if sc.mods.contains(Mods::ALT) {
+                    m |= Modifiers::Alt;
+                }
+                if sc.mods.contains(Mods::SHIFT) {
+                    m |= Modifiers::Shift;
+                }
+                (sc.key.to_uppercase(), m)
+            }
+            None => (String::new(), Modifiers::empty()),
+        };
+        menu.add_item(it.id, it.title.clone(), flags, icon, key, mods);
+    }
+}
+
+/// A sealed memfd holding `data`.
+fn memfd_with(data: &[u8]) -> std::io::Result<std::os::fd::OwnedFd> {
+    use rustix::fs::{MemfdFlags, SealFlags};
+    let fd = rustix::fs::memfd_create(
+        "vetro-menu",
+        MemfdFlags::CLOEXEC | MemfdFlags::ALLOW_SEALING,
+    )?;
+    let mut written = 0;
+    while written < data.len() {
+        let n = rustix::io::write(&fd, data.get(written..).unwrap_or_default())?;
+        if n == 0 {
+            break;
+        }
+        written += n;
+    }
+    let _ = rustix::fs::fcntl_add_seals(
+        &fd,
+        SealFlags::SHRINK | SealFlags::GROW | SealFlags::WRITE | SealFlags::SEAL,
+    );
+    Ok(fd)
+}
+
+/// Sends the window's glass regions when they changed (double-buffered: applied by the next
+/// commit, which follows).
+fn send_glass(s: &mut Surface, regions: Vec<GlassRegion>) {
+    let Some(g) = &s.glass else { return };
+    if regions == s.glass_sent {
+        return;
+    }
+    g.clear();
+    let mut profile = None;
+    for r in regions.iter().take(silica_protocols::glass::MAX_REGIONS) {
+        let material = match r.material {
+            "Glass/Thick" => silica_glass_v1::Material::Thick,
+            "Glass/Clear" => silica_glass_v1::Material::Clear,
+            _ => silica_glass_v1::Material::Regular,
+        };
+        if g.version() >= 7 && profile != Some(r.profile) {
+            let p = match r.profile as u32 {
+                1 => silica_glass_v1::Profile::Menu,
+                2 => silica_glass_v1::Profile::Panel,
+                3 => silica_glass_v1::Profile::Module,
+                4 => silica_glass_v1::Profile::Control,
+                5 => silica_glass_v1::Profile::Dock,
+                6 => silica_glass_v1::Profile::Tooltip,
+                7 => silica_glass_v1::Profile::Sheet,
+                8 => silica_glass_v1::Profile::Banner,
+                9 => silica_glass_v1::Profile::Popover,
+                _ => silica_glass_v1::Profile::Default,
+            };
+            g.set_profile(p, silica_glass_v1::Shadow::Compositor);
+            profile = Some(r.profile);
+        }
+        let (x, y) = (r.rect.x.round() as i32, r.rect.y.round() as i32);
+        let (w, h) = (r.rect.width.round() as i32, r.rect.height.round() as i32);
+        if g.version() >= 9 {
+            g.add_continuous_region(
+                x,
+                y,
+                w,
+                h,
+                f64::from(r.radius),
+                f64::from(r.smoothing),
+                material,
+                f64::from(r.opacity),
+            );
+        } else {
+            g.add_region(x, y, w, h, f64::from(r.radius), material);
+        }
+    }
+    s.glass_sent = regions;
 }
 
 /// At most 4000 bytes of text around the caret (text-input-v3 limit), with the caret and
@@ -1631,6 +1981,57 @@ impl Dispatch<ZwpTextInputV3, ()> for Platform {
             }
             _ => {}
         }
+    }
+}
+
+macro_rules! no_events {
+    ($($ty:ty),*) => {$(
+        impl Dispatch<$ty, ()> for Platform {
+            fn event(_: &mut Self, _: &$ty, _: <$ty as Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+        }
+    )*};
+}
+
+no_events!(
+    SilicaGlassManagerV1,
+    SilicaGlassV1,
+    SilicaWindowManagerV1,
+    SilicaWindowV1,
+    SilicaMenuManagerV1
+);
+
+impl Dispatch<SilicaMenuV1, ()> for Platform {
+    fn event(
+        state: &mut Self,
+        _: &SilicaMenuV1,
+        event: silica_menu_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let silica_menu_v1::Event::Activated { id } = event {
+            state.ui.menu_activated(id);
+        }
+    }
+}
+
+impl Dispatch<SilicaPopupMenuV1, u64> for Platform {
+    fn event(
+        state: &mut Self,
+        menu: &SilicaPopupMenuV1,
+        event: silica_popup_menu_v1::Event,
+        token: &u64,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        let chosen = match event {
+            silica_popup_menu_v1::Event::Selected { id } => Some(id),
+            silica_popup_menu_v1::Event::Dismissed => None,
+            _ => return,
+        };
+        state.popup_menus.retain(|(m, _)| m != menu);
+        menu.destroy();
+        state.ui.popup_menu_result(*token, chosen);
     }
 }
 

@@ -382,6 +382,9 @@ pub struct PaintOptions {
     pub backdrop: bool,
     /// The opaque fill that replaces glass when backdrops are off (tint over Surface/Window).
     pub blur_fallback: Option<Color>,
+    /// The compositor draws the window's glass regions (`silica-glass-v1`): glass layers
+    /// declared as compositor glass are not painted by the client.
+    pub compositor_glass: bool,
 }
 
 impl Default for PaintOptions {
@@ -389,6 +392,7 @@ impl Default for PaintOptions {
         PaintOptions {
             backdrop: true,
             blur_fallback: None,
+            compositor_glass: false,
         }
     }
 }

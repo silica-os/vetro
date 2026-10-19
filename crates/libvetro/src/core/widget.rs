@@ -320,6 +320,21 @@ impl PaintCx<'_> {
     pub fn now(&self) -> f64 {
         self.ui.now
     }
+
+    /// Records a glass surface of `material` (`Glass/Regular`, `Glass/Thick`,
+    /// `Glass/Clear`): drawn by the compositor in windows whose backdrop is outside them,
+    /// by the client otherwise.
+    pub fn glass(
+        &mut self,
+        name: &str,
+        rect: Rect,
+        shape: crate::shape::Shape,
+        material: &'static str,
+        profile: crate::core::display::GlassProfile,
+    ) {
+        let style = self.theme.material_style(material);
+        self.rec.glass(name, rect, shape, style, material, profile);
+    }
 }
 
 /// The context of [`Widget::event`] and [`Widget::tick`].

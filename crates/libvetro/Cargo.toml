@@ -28,6 +28,8 @@ silica-protocols = { git = "https://github.com/silica-os/silica-desktop", rev = 
 serde_json = "1"
 khronos-egl = { version = "6", default-features = false, features = ["1_5", "dynamic"] }
 wayland-egl = "0.32"
+libloading = "0.8"
+ash = { version = "0.38", default-features = false, features = ["loaded", "std"] }
 rustix = { version = "1", features = ["fs", "pipe"] }
 
 [lints]
