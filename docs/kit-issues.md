@@ -66,3 +66,13 @@ test that names it, until the kit is fixed.
   `windowControls` in the tokens (centre 26, pitch 23) is the measured placement of the shell.
 - The 16 pt dot masters are compared with a loose mean (edge pixels dominate); their inside
   matches exactly.
+
+## Popovers
+
+- The arrow edge's exported `svg` and `radii` (7 values) are degenerate (a flat outline with
+  stray control points); the PNGs are right. The outline is built from the Flutter port
+  (`silica_ui` `AmalfiPopoverShape`): a smooth 16 pt body, an 8 pt deep, 20 pt wide arrow with
+  base corners 4 and tip 3, its centre 30 from the start or end or in the middle.
+- The detached popovers name their surface `Body` (the others `Surface`).
+- `Content/Form` renders 3 pt taller than its master (shadows of the content); compared at the
+  top left corner.
