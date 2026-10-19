@@ -205,6 +205,8 @@ pub struct Window {
     /// Opaque: painted with `Surface/Window` under the content (Amalfi windows are flat and
     /// opaque; popups and shell surfaces are transparent).
     pub opaque: bool,
+    /// The compositor draws a title bar (false: an alert's panel, which has none).
+    pub decorated: bool,
     /// The compositor draws the glass regions (popups, shell surfaces, transparent panels).
     pub compositor_glass: bool,
     /// Height of the toolbar the app draws under Ossido's window buttons (full-size
@@ -244,6 +246,7 @@ impl Window {
             keep_on_close_request: false,
             compositor_glass: kind_glass(&kind_ref),
             opaque: !kind_glass(&kind_ref) && !matches!(kind_ref, WindowKind::Lock { .. }),
+            decorated: true,
             toolbar_height: 0.0,
         }
     }

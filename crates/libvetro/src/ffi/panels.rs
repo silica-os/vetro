@@ -171,8 +171,9 @@ pub extern "C" fn vetro_window_present_alert(
                 };
                 let w = ui.create_window(kind, size);
                 if let Some(win) = ui.window_mut(w) {
-                    // The alert draws its own panel.
+                    // The alert draws its own panel, with no title bar.
                     win.opaque = false;
+                    win.decorated = false;
                 }
                 ui.set_content(w, a);
                 ui.show_window(w);

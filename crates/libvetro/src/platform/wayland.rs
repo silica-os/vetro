@@ -890,7 +890,8 @@ impl Platform {
                     return;
                 };
                 // A sheet has no title bar: Ossido draws it as a card over its parent.
-                let decorations = if matches!(win.kind, WindowKind::Sheet { .. }) {
+                let decorations = if matches!(win.kind, WindowKind::Sheet { .. }) || !win.decorated
+                {
                     WindowDecorations::RequestClient
                 } else {
                     WindowDecorations::RequestServer
@@ -915,6 +916,15 @@ impl Platform {
                         dialog.set_modal();
                         sheet_dialog = Some(dialog);
                     }
+                } else if win.kind == WindowKind::Panel
+                    && !win.decorated
+                    && let Some(d) = &self.dialogs
+                {
+                    // An alert panel of its own: a modal dialog without a parent, which Ossido
+                    // centres on the screen.
+                    let dialog = d.get_xdg_dialog(w.xdg_toplevel(), &self.qh, ());
+                    dialog.set_modal();
+                    sheet_dialog = Some(dialog);
                 }
                 w.commit();
                 Role::Toplevel(w)
