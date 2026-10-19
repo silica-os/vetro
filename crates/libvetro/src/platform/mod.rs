@@ -3,4 +3,4 @@
 pub mod keys;
 pub mod wayland;
 
-pub use wayland::{PlatformError, run};
+pub use wayland::{PlatformError, run, services, spawn};

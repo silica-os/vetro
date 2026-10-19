@@ -148,6 +148,29 @@ impl Renderer {
     }
 }
 
+/// Values the system services delivered, applied on the next pass of the loop.
+#[derive(Default)]
+struct Pending {
+    appearance: Option<crate::core::env::Appearance>,
+    repeat: Option<crate::services::KeyRepeat>,
+}
+
+thread_local! {
+    static SPAWNER: std::cell::RefCell<Option<calloop::futures::Scheduler<()>>> = const { std::cell::RefCell::new(None) };
+    static SERVICES: std::cell::RefCell<Option<std::rc::Rc<crate::services::Services>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs a future on the UI thread's event loop (system service calls, timers); false
+/// outside [`run`].
+pub fn spawn(fut: impl std::future::Future<Output = ()> + 'static) -> bool {
+    SPAWNER.with(|c| c.borrow().as_ref().is_some_and(|s| s.schedule(fut).is_ok()))
+}
+
+/// The system services of this process (inside [`run`]).
+pub fn services() -> Option<std::rc::Rc<crate::services::Services>> {
+    SERVICES.with(|c| c.borrow().clone())
+}
+
 /// Key repeat state (client side: Wayland compositors send rate and delay only).
 #[derive(Debug, Clone, Copy)]
 struct Repeat {
@@ -200,6 +223,7 @@ pub struct Platform {
     text_input_pending: TextInputPending,
     text_input_enabled: bool,
     cursor: Cursor,
+    pending: std::rc::Rc<std::cell::RefCell<Pending>>,
     renderer: Renderer,
     gl: Option<crate::render::gl::GlContext>,
     vk: Option<crate::render::vulkan::VkContext>,
@@ -243,10 +267,37 @@ pub fn run(app_id: &str, setup: impl FnOnce(&mut Ui)) -> Result<(), PlatformErro
     WaylandSource::new(conn.clone(), queue)
         .insert(event_loop.handle())
         .map_err(|e| err(format!("Wayland source: {e}")))?;
+    let (executor, scheduler) = calloop::futures::executor::<()>().map_err(err)?;
+    event_loop
+        .handle()
+        .insert_source(executor, |(), _, _| {})
+        .map_err(|e| err(format!("executor: {e}")))?;
+    let services = std::rc::Rc::new(crate::services::Services::new());
+    let pending = std::rc::Rc::new(std::cell::RefCell::new(Pending::default()));
+    let p1 = pending.clone();
+    let appearance_sub = services
+        .appearance()
+        .subscribe(move |a| p1.borrow_mut().appearance = Some(*a));
+    let p2 = pending.clone();
+    let repeat_sub = services
+        .key_repeat()
+        .subscribe(move |r| p2.borrow_mut().repeat = Some(*r));
+    {
+        let s = services.clone();
+        let _ = scheduler.schedule(async move {
+            if let Err(e) = s.run().await {
+                tracing::info!("system services: {e}");
+            }
+        });
+    }
+    SPAWNER.with(|c| *c.borrow_mut() = Some(scheduler));
+    SERVICES.with(|c| *c.borrow_mut() = Some(services));
     let mut platform = Platform::new(conn, &globals, qh, event_loop.handle())?;
+    platform.pending = pending;
     platform.app_id = app_id.to_string();
     setup(&mut platform.ui);
     platform.process();
+    let _keep = (appearance_sub, repeat_sub);
     while !platform.exit {
         let timeout = platform.timeout();
         event_loop
@@ -311,6 +362,7 @@ impl Platform {
             text_input_pending: TextInputPending::default(),
             text_input_enabled: false,
             cursor: Cursor::Default,
+            pending: std::rc::Rc::default(),
             renderer: Renderer::from_env(),
             gl: None,
             vk: None,
@@ -354,6 +406,16 @@ impl Platform {
     /// After every dispatch: time, timers, requests, frames.
     fn process(&mut self) {
         self.ui.now = self.start.elapsed().as_secs_f64();
+        let pending = std::mem::take(&mut *self.pending.borrow_mut());
+        if let Some(a) = pending.appearance {
+            self.ui.set_appearance(a);
+        }
+        if let Some(r) = pending.repeat {
+            self.repeat = Repeat {
+                rate: r.rate_hz,
+                delay: r.delay_ms,
+            };
+        }
         self.ui.fire_timers();
         for _ in 0..8 {
             let requests = self.ui.take_requests();
