@@ -79,6 +79,7 @@ VETRO_1.0 {
     vetro_canvas_text;
     vetro_canvas_glyph;
     vetro_measure_text;
+    vetro_view_perform;
   local:
     *;
 };

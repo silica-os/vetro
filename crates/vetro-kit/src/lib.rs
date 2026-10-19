@@ -599,6 +599,18 @@ impl View {
         check(unsafe { f::vetro_view_focus(self.as_ptr()) })
     }
 
+    /// Performs an accessibility action (`vetro_sys::VETRO_ACTION_*`): a click activates a
+    /// control.
+    pub fn perform(&self, action: u32) -> Result<()> {
+        // SAFETY: a handle and a plain value.
+        check(unsafe { f::vetro_view_perform(self.as_ptr(), action) })
+    }
+
+    /// Clicks it (the accessibility action).
+    pub fn click(&self) -> Result<()> {
+        self.perform(sys::VETRO_ACTION_CLICK)
+    }
+
     /// Its rectangle in window coordinates.
     pub fn frame(&self) -> Result<Rect> {
         let mut r = Rect::default();

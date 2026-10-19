@@ -1364,6 +1364,32 @@ pub extern "C" fn vetro_window_snapshot_png(
     })
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn vetro_view_perform(view: *mut VetroView, action: u32) -> VetroStatus {
+    use crate::core::a11y::Action;
+    guard(VETRO_ERROR_PLATFORM, || {
+        let a = match action {
+            VETRO_ACTION_CLICK => Action::Click,
+            VETRO_ACTION_FOCUS => Action::Focus,
+            VETRO_ACTION_INCREMENT => Action::Increment,
+            VETRO_ACTION_DECREMENT => Action::Decrement,
+            VETRO_ACTION_EXPAND => Action::Expand,
+            VETRO_ACTION_COLLAPSE => Action::Collapse,
+            VETRO_ACTION_SHOW_MENU => Action::ShowMenu,
+            _ => return set_last(VETRO_ERROR_INVALID_ARGUMENT),
+        };
+        status(view_id(view).and_then(|v| {
+            with_ui(|ui| {
+                if !ui.tree.contains(v) {
+                    return Err(VETRO_ERROR_NO_SUCH_OBJECT);
+                }
+                ui.perform(v, a);
+                Ok(())
+            })?
+        }))
+    })
+}
+
 /// Compile-time check: every function of the ABI list is defined here with exactly its
 /// signature.
 macro_rules! check_signatures {

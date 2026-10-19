@@ -302,6 +302,13 @@ ids! { LAYERS,
     VETRO_KEYBOARD_NONE = 0, VETRO_KEYBOARD_EXCLUSIVE = 1, VETRO_KEYBOARD_ON_DEMAND = 2,
 }
 
+// Accessibility actions.
+ids! { ACTIONS,
+    VETRO_ACTION_CLICK = 1, VETRO_ACTION_FOCUS = 2, VETRO_ACTION_INCREMENT = 3,
+    VETRO_ACTION_DECREMENT = 4, VETRO_ACTION_EXPAND = 5, VETRO_ACTION_COLLAPSE = 6,
+    VETRO_ACTION_SHOW_MENU = 7,
+}
+
 // Menu item flags and pop-up kinds.
 ids! { MENU_FLAGS,
     VETRO_MENU_DISABLED = 1, VETRO_MENU_CHECKED = 2, VETRO_MENU_MIXED = 4,
@@ -398,6 +405,8 @@ macro_rules! for_each_function {
             fn vetro_canvas_text(canvas: *mut $crate::VetroCanvas, x: f32, y: f32, text: *const ::std::ffi::c_char, family: *const ::std::ffi::c_char, size: f32, weight: u32, color: $crate::VetroColor);
             fn vetro_canvas_glyph(canvas: *mut $crate::VetroCanvas, rect: $crate::VetroRect, symbol: *const ::std::ffi::c_char, weight: u32, color: $crate::VetroColor);
             fn vetro_measure_text(text: *const ::std::ffi::c_char, family: *const ::std::ffi::c_char, size: f32, weight: u32, out_width: *mut f32, out_height: *mut f32) -> $crate::VetroStatus;
+            // Accessibility actions (assistive technologies, tests).
+            fn vetro_view_perform(view: *mut $crate::VetroView, action: u32) -> $crate::VetroStatus;
         }
     };
 }

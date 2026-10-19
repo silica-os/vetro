@@ -178,7 +178,8 @@ pub fn header_text() -> String {
         let _ = writeln!(h, "#define {name} ({v})");
     }
     h.push('\n');
-    let groups: [(&str, &[(&str, u32)]); 9] = [
+    let groups: [(&str, &[(&str, u32)]); 10] = [
+        ("Accessibility actions", vetro_sys::ACTIONS),
         ("Value kinds", vetro_sys::VALUE_KINDS),
         ("Events, modifiers and keys", vetro_sys::EVENT_IDS),
         ("Properties", vetro_sys::PROPERTIES),

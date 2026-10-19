@@ -75,6 +75,15 @@ typedef void (*VetroMenuFn)(uint32_t id, void *user);
 #define VETRO_ERROR_NO_RUNTIME (-8)
 #define VETRO_ERROR_BUFFER_TOO_SMALL (-9)
 
+/* Accessibility actions. */
+#define VETRO_ACTION_CLICK 1u
+#define VETRO_ACTION_FOCUS 2u
+#define VETRO_ACTION_INCREMENT 3u
+#define VETRO_ACTION_DECREMENT 4u
+#define VETRO_ACTION_EXPAND 5u
+#define VETRO_ACTION_COLLAPSE 6u
+#define VETRO_ACTION_SHOW_MENU 7u
+
 /* Value kinds. */
 #define VETRO_VALUE_NONE 0u
 #define VETRO_VALUE_BOOL 1u
@@ -344,6 +353,7 @@ void vetro_canvas_line(VetroCanvas *canvas, float x0, float y0, float x1, float 
 void vetro_canvas_text(VetroCanvas *canvas, float x, float y, const char *text, const char *family, float size, uint32_t weight, VetroColor color);
 void vetro_canvas_glyph(VetroCanvas *canvas, VetroRect rect, const char *symbol, uint32_t weight, VetroColor color);
 VetroStatus vetro_measure_text(const char *text, const char *family, float size, uint32_t weight, float *out_width, float *out_height);
+VetroStatus vetro_view_perform(VetroView *view, uint32_t action);
 
 #ifdef __cplusplus
 }
