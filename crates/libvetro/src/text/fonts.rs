@@ -127,10 +127,10 @@ impl Fonts {
             font_style::Width::NORMAL,
             slant,
         );
-        if !deterministic() {
-            if let Some(tf) = FontMgr::new().match_family_style(family, style) {
-                return Some(tf);
-            }
+        if !deterministic()
+            && let Some(tf) = FontMgr::new().match_family_style(family, style)
+        {
+            return Some(tf);
         }
         self.bundled(UI_FAMILY, weight)
     }

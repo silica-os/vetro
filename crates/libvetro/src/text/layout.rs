@@ -7,9 +7,9 @@
 use std::ops::Range;
 
 use skia_safe::textlayout::{
-    Affinity, ParagraphBuilder, ParagraphStyle,
-    PlaceholderAlignment, PlaceholderStyle, RectHeightStyle, RectWidthStyle, TextAlign,
-    TextBaseline, TextDecoration, TextDirection, TextStyle as SkTextStyle,
+    Affinity, ParagraphBuilder, ParagraphStyle, PlaceholderAlignment, PlaceholderStyle,
+    RectHeightStyle, RectWidthStyle, TextAlign, TextBaseline, TextDecoration, TextDirection,
+    TextStyle as SkTextStyle,
 };
 use skia_safe::{Canvas, FontStyle, font_style};
 
@@ -123,12 +123,13 @@ impl TextStyle {
             slant,
         ));
         s.set_color(self.color.to_sk());
-        if let Some(lh) = self.line_height {
-            if self.size > 0.0 && lh > 0.0 {
-                s.set_height_override(true);
-                s.set_height(lh / self.size);
-                s.set_half_leading(true);
-            }
+        if let Some(lh) = self.line_height
+            && self.size > 0.0
+            && lh > 0.0
+        {
+            s.set_height_override(true);
+            s.set_height(lh / self.size);
+            s.set_half_leading(true);
         }
         if self.tracking != 0.0 {
             s.set_letter_spacing(self.tracking);
@@ -350,12 +351,12 @@ impl TextLayout {
                         att.baseline,
                     ));
                     b.pop();
-                    if let Some(rest) = s.get(next_char(s, a)..z) {
-                        if !rest.is_empty() {
-                            b.push_style(&style.to_sk());
-                            b.add_text(rest);
-                            b.pop();
-                        }
+                    if let Some(rest) = s.get(next_char(s, a)..z)
+                        && !rest.is_empty()
+                    {
+                        b.push_style(&style.to_sk());
+                        b.add_text(rest);
+                        b.pop();
                     }
                     continue;
                 }
@@ -487,14 +488,7 @@ impl TextLayout {
         self.paragraph
             .get_rects_for_range(a..z, RectHeightStyle::Max, RectWidthStyle::Tight)
             .iter()
-            .map(|b| {
-                Rect::new(
-                    b.rect.left,
-                    b.rect.top,
-                    b.rect.width(),
-                    b.rect.height(),
-                )
-            })
+            .map(|b| Rect::new(b.rect.left, b.rect.top, b.rect.width(), b.rect.height()))
             .collect()
     }
 
@@ -537,10 +531,10 @@ impl TextLayout {
             if at < l.end || (at == l.end && (upstream || i + 1 == lines.len())) {
                 return i;
             }
-            if let Some(next) = lines.get(i + 1) {
-                if at < next.start {
-                    return i;
-                }
+            if let Some(next) = lines.get(i + 1)
+                && at < next.start
+            {
+                return i;
             }
         }
         lines.len().saturating_sub(1)
@@ -566,7 +560,9 @@ impl TextLayout {
     /// The byte range of the word at `at` (double-click selection).
     pub fn word_at(&self, at: usize) -> Range<usize> {
         let u = self.to_utf16(at);
-        let r = self.paragraph.get_word_boundary(u32::try_from(u).unwrap_or(0));
+        let r = self
+            .paragraph
+            .get_word_boundary(u32::try_from(u).unwrap_or(0));
         self.to_utf8(r.start)..self.to_utf8(r.end)
     }
 }

@@ -7,6 +7,7 @@
 
 pub mod amalfi;
 pub mod color;
+pub mod core;
 pub mod geom;
 pub mod motion;
 pub mod render;

@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn generated_values_match_the_json() {
         assert_eq!(LIGHT.text_primary.a, 0xff);
-        assert_eq!(app_color(true, "App/Calculator/Window").is_some(), true);
+        assert!(app_color(true, "App/Calculator/Window").is_some());
         assert_eq!(app_color(false, "App/Calculator/Window"), None);
         assert_eq!(typography::BODY.size, 13.0);
         assert_eq!(typography::BODY.line_height, Some(18.0));

@@ -7,6 +7,9 @@
 //! - the shared library gets its soname (`libvetro.so.1`) and versioned symbols
 //!   (`VETRO_1.0`, `vetro.map`).
 
+// serde_json's `value["key"]` returns Null for a missing key: it never panics.
+#![allow(clippy::indexing_slicing)]
+
 use std::path::{Path, PathBuf};
 
 #[path = "build/tokens.rs"]
@@ -35,7 +38,10 @@ fn link_shims(out: &Path) {
     ];
     let shim_dir = out.join("shims");
     let mut needed = false;
-    for (name, versioned) in [("freetype", "libfreetype.so.6"), ("fontconfig", "libfontconfig.so.1")] {
+    for (name, versioned) in [
+        ("freetype", "libfreetype.so.6"),
+        ("fontconfig", "libfontconfig.so.1"),
+    ] {
         let plain = format!("lib{name}.so");
         if dirs.iter().any(|d| Path::new(d).join(&plain).exists()) {
             continue;

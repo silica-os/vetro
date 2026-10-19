@@ -12,7 +12,9 @@
 
 use skia_safe::{
     BlurStyle, Canvas, ClipOp, ColorMatrix, MaskFilter, Paint as SkPaint, PaintStyle, Path,
-    PathEffect, PathOp, TileMode, canvas::SaveLayerRec, color_filters,
+    PathEffect, PathOp, TileMode,
+    canvas::SaveLayerRec,
+    color_filters,
     gradient::{Colors, Gradient, Interpolation, shaders},
     image_filters,
 };
@@ -74,9 +76,8 @@ impl Paint {
     }
 
     fn apply(&self, paint: &mut SkPaint, rect: Rect, opacity: f32) {
-        let unit = |p: Point| {
-            skia_safe::Point::new(rect.x + p.x * rect.width, rect.y + p.y * rect.height)
-        };
+        let unit =
+            |p: Point| skia_safe::Point::new(rect.x + p.x * rect.width, rect.y + p.y * rect.height);
         let stops_of = |stops: &[Stop]| -> (Vec<skia_safe::Color4f>, Vec<f32>) {
             (
                 stops
@@ -523,10 +524,10 @@ fn paint_border(
     if border.round_ends {
         p.set_stroke_cap(skia_safe::paint::Cap::Round);
     }
-    if border.dash.len() >= 2 {
-        if let Some(e) = PathEffect::dash(&border.dash, 0.0) {
-            p.set_path_effect(e);
-        }
+    if border.dash.len() >= 2
+        && let Some(e) = PathEffect::dash(&border.dash, 0.0)
+    {
+        p.set_path_effect(e);
     }
     match border.position {
         BorderPosition::Inside if border.dash.is_empty() => {
@@ -630,10 +631,10 @@ fn paint_backdrop(canvas: &Canvas, rect: Rect, outline: &Path, blur: &Blur, opts
     let rec = SaveLayerRec::default().bounds(&bounds).backdrop(&filter);
     canvas.save_layer(&rec);
     canvas.restore();
-    if let Some(g) = glass {
-        if g.specular {
-            crate::render::glass::paint_specular(canvas, rect, outline);
-        }
+    if let Some(g) = glass
+        && g.specular
+    {
+        crate::render::glass::paint_specular(canvas, rect, outline);
     }
     canvas.restore();
 }

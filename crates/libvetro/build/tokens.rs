@@ -109,7 +109,9 @@ fn colors(code: &mut String, t: &Value) -> Result<()> {
     let light = t["colors"]["light"]
         .as_object()
         .ok_or("colors.light missing")?;
-    let dark = t["colors"]["dark"].as_object().ok_or("colors.dark missing")?;
+    let dark = t["colors"]["dark"]
+        .as_object()
+        .ok_or("colors.dark missing")?;
     // The system palette: the names both appearances have (the apps' own are looked up).
     let common: Vec<&String> = light
         .keys()
@@ -155,7 +157,9 @@ fn colors(code: &mut String, t: &Value) -> Result<()> {
 
 fn typography(code: &mut String, t: &Value) -> Result<()> {
     let ty = t["typography"].as_object().ok_or("typography missing")?;
-    code.push_str("/// The type styles (`typography`).\npub mod typography {\n    use super::TypeStyle;\n\n");
+    code.push_str(
+        "/// The type styles (`typography`).\npub mod typography {\n    use super::TypeStyle;\n\n",
+    );
     let mut all = Vec::new();
     for (name, v) in ty {
         let size = num(&v["size"])?;
@@ -175,9 +179,11 @@ fn typography(code: &mut String, t: &Value) -> Result<()> {
         let _ = writeln!(
             code,
             "    /// `{name}`: {family} {size} / {} weight {weight}.\n    pub const {id}: TypeStyle = TypeStyle {{ name: {name:?}, family: {family:?}, size: {}, line_height: {}, weight: {weight}, tracking: {}, features: &[{}] }};\n",
-            line.map(|l| l.to_string()).unwrap_or_else(|| "natural".into()),
+            line.map(|l| l.to_string())
+                .unwrap_or_else(|| "natural".into()),
             f(size),
-            line.map(|l| format!("Some({})", f(l))).unwrap_or_else(|| "None".into()),
+            line.map(|l| format!("Some({})", f(l)))
+                .unwrap_or_else(|| "None".into()),
             f(tracking),
             features.join(", ")
         );
@@ -219,12 +225,10 @@ fn write_numbers(code: &mut String, obj: &serde_json::Map<String, Value>, indent
                 upper(k),
                 f(n as f32)
             );
-        } else if let Some(o) = v.as_object() {
-            if o.values().any(|x| x.is_number()) {
-                let _ = writeln!(code, "{indent}/// `{k}`.\n{indent}pub mod {} {{", snake(k));
-                write_numbers(code, o, &format!("{indent}    "));
-                let _ = writeln!(code, "{indent}}}");
-            }
+        } else if let Some(o) = v.as_object().filter(|o| o.values().any(|x| x.is_number())) {
+            let _ = writeln!(code, "{indent}/// `{k}`.\n{indent}pub mod {} {{", snake(k));
+            write_numbers(code, o, &format!("{indent}    "));
+            let _ = writeln!(code, "{indent}}}");
         }
     }
 }
@@ -417,8 +421,14 @@ fn motion_tokens(code: &mut String, md: &str) -> Result<()> {
         }
         let id = upper(name);
         if name.starts_with("spring.") {
-            let response: f32 = cells.get(2).and_then(|c| c.parse().ok()).ok_or("spring response")?;
-            let damping: f32 = cells.get(3).and_then(|c| c.parse().ok()).ok_or("spring ζ")?;
+            let response: f32 = cells
+                .get(2)
+                .and_then(|c| c.parse().ok())
+                .ok_or("spring response")?;
+            let damping: f32 = cells
+                .get(3)
+                .and_then(|c| c.parse().ok())
+                .ok_or("spring ζ")?;
             let _ = writeln!(
                 code,
                 "    /// `{name}`.\n    pub const {id}: SpringToken = SpringToken {{ response: {}, damping_ratio: {} }};",

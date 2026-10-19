@@ -79,7 +79,11 @@ impl Color {
 
     /// The same colour with its alpha multiplied by `k` (0–1).
     pub fn with_opacity(self, k: f32) -> Color {
-        let k = if k.is_finite() { k.clamp(0.0, 1.0) } else { 1.0 };
+        let k = if k.is_finite() {
+            k.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
         Color {
             a: (f32::from(self.a) * k).round() as u8,
             ..self
@@ -118,7 +122,11 @@ impl Color {
 
     /// Linear interpolation in sRGB, `t` from 0 (`self`) to 1 (`other`).
     pub fn lerp(self, other: Color, t: f32) -> Color {
-        let t = if t.is_finite() { t.clamp(0.0, 1.0) } else { 0.0 };
+        let t = if t.is_finite() {
+            t.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
         let l = |a: u8, b: u8| -> u8 {
             (f32::from(a) + (f32::from(b) - f32::from(a)) * t)
                 .round()

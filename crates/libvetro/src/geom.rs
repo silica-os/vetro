@@ -87,11 +87,7 @@ impl Size {
 
 /// A length that is finite and not negative, or infinite.
 pub fn sanitize_len(v: f32) -> f32 {
-    if v.is_nan() || v < 0.0 {
-        0.0
-    } else {
-        v
-    }
+    if v.is_nan() || v < 0.0 { 0.0 } else { v }
 }
 
 /// An axis-aligned rectangle.

@@ -257,11 +257,8 @@ impl<T: Animatable> Animated<T> {
             Timing::None => self.jump(target),
             Timing::Curve { duration, .. } if duration <= 0.0 => self.jump(target),
             _ => {
-                if self.value == target && self.velocity.iter().all(|v| v.abs() < 1e-4) {
-                    self.active = false;
-                } else {
-                    self.active = true;
-                }
+                self.active =
+                    !(self.value == target && self.velocity.iter().all(|v| v.abs() < 1e-4));
             }
         }
     }
@@ -280,7 +277,11 @@ impl<T: Animatable> Animated<T> {
         if !self.active {
             return false;
         }
-        let dt = if dt.is_finite() { dt.clamp(0.0, 0.25) } else { 0.0 };
+        let dt = if dt.is_finite() {
+            dt.clamp(0.0, 0.25)
+        } else {
+            0.0
+        };
         self.elapsed += dt;
         match self.timing {
             Timing::None => self.jump(self.target),
