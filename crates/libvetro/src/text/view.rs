@@ -468,7 +468,11 @@ impl Widget for TextView {
         let bounds = cx.bounds();
         self.width = bounds.width;
         self.height = bounds.height;
-        self.style.color = theme.colors.text_primary;
+        if self.style.color != theme.colors.text_primary {
+            // The appearance changed: the cached layouts carry the old colour.
+            self.style.color = theme.colors.text_primary;
+            self.invalidate_layouts();
+        }
         cx.rec.push_clip(bounds, Shape::RECT);
         let (first, mut top) = self.para_at_y(self.scroll);
         let sel = self.editor.selection().range();
