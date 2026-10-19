@@ -4,6 +4,7 @@
 //! cargo xtask sync-kit [--design DIR] [PREFIX ...]   copy kit masters into the fixtures
 //! cargo xtask check-sources [--desktop DIR]          compare data/ with silica-desktop
 //! cargo xtask header                                 regenerate include/vetro.h
+//! cargo xtask package [--debug]                      libvetro.so.1 with versioned symbols
 //! cargo xtask abi-check                              compare the exported ABI with abi/
 //! cargo xtask vm <build|run EXAMPLE|shot PATH>       build for and run in the dev VM
 //! ```
@@ -28,6 +29,7 @@ fn main() {
         Some("check-sources") => check_sources(rest),
         Some("header") => abi::header(),
         Some("abi-check") => abi::check(rest),
+        Some("package") => abi::package(rest).map(|_| ()),
         Some("vm") => vm::vm(rest),
         _ => Err("usage: cargo xtask <sync-kit|check-sources|header|abi-check|vm> …".to_string()),
     };

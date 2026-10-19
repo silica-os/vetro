@@ -153,9 +153,33 @@ pub type ShortcutHandler = Box<dyn FnMut(&mut Ui)>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HandlerId(u64);
 
+impl HandlerId {
+    /// The id as a number (never 0).
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// The id of a number.
+    pub fn from_raw(raw: u64) -> HandlerId {
+        HandlerId(raw)
+    }
+}
+
 /// A timer's id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TimerId(u64);
+
+impl TimerId {
+    /// The id as a number (never 0).
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// The id of a number.
+    pub fn from_raw(raw: u64) -> TimerId {
+        TimerId(raw)
+    }
+}
 
 struct Timer {
     id: TimerId,

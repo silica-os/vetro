@@ -620,6 +620,7 @@ dependencies = [
  "smithay-client-toolkit",
  "tracing",
  "unicode-segmentation",
+ "vetro-sys",
  "wayland-backend",
  "wayland-client",
  "wayland-egl",
@@ -1317,6 +1318,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "vetro-sys"
+version = "0.1.0"
+
+[[package]]
 name = "vetro-test"
 version = "0.1.0"
 dependencies = [
@@ -1566,6 +1571,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "vetro-sys",
 ]
 
 [[package]]

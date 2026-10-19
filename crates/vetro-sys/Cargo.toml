@@ -1,0 +1,19 @@
+[package]
+name = "vetro-sys"
+description = "The C ABI of Vetro (libvetro.so): types and function declarations, one list shared by the library and its Rust users"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+links = "vetro"
+build = "build.rs"
+
+[features]
+default = []
+# Link libvetro.so dynamically (distribution builds); without it, the user links libvetro's
+# rlib statically (vetro-kit's `static` feature, the default inside this workspace).
+dynamic = []
+
+[lints]
+workspace = true
