@@ -305,7 +305,7 @@ impl Scene {
                 } else {
                     format!("{prefix}/{}", c.name)
                 };
-                if c.master.is_some() && !c.children.is_empty() {
+                if (c.master.is_some() || c.kind == "Group") && !c.children.is_empty() {
                     // A nested master: its layers, under the instance's name.
                     walk(c, &path, out);
                 } else {
@@ -371,25 +371,28 @@ impl Scene {
             .map_err(|e| format!("{}: {e}", self.master.png.display()))?;
         let kit = Image::from_encoded(Data::new_copy(&bytes)).ok_or("cannot decode the PNG")?;
         let (kw, kh) = (kit.width(), kit.height());
-        let (w, h) = (ours.width(), ours.height());
-        // A kit PNG may be taller or wider than what the master paints (an empty margin the
-        // export adds): `png_margin` accepts it and compares the top left corner.
-        let padded = self.png_margin && kw >= w && kh >= h;
-        if (kw, kh) != (w, h) && !padded {
-            return Err(format!("size {w}x{h}, kit {kw}x{kh}"));
+        let (ow, oh) = (ours.width(), ours.height());
+        // A kit PNG may differ from what the master paints by an empty margin the export
+        // adds (or a rounding): `png_margin` compares the top left corner they share.
+        if (kw, kh) != (ow, oh) && !self.png_margin {
+            return Err(format!("size {ow}x{oh}, kit {kw}x{kh}"));
         }
-        let mut a = rgba(&kit).ok_or("cannot read the PNG's pixels")?;
-        if padded && (kw, kh) != (w, h) {
-            let mut cropped = Vec::with_capacity((w * h * 4) as usize);
+        let (w, h) = (kw.min(ow), kh.min(oh));
+        let crop = |px: Vec<u8>, from_w: i32| -> Vec<u8> {
+            if from_w == w && px.len() == (w * h * 4) as usize {
+                return px;
+            }
+            let mut out = Vec::with_capacity((w * h * 4) as usize);
             for y in 0..h as usize {
-                let start = y * kw as usize * 4;
-                if let Some(row) = a.get(start..start + w as usize * 4) {
-                    cropped.extend_from_slice(row);
+                let start = y * from_w as usize * 4;
+                if let Some(row) = px.get(start..start + w as usize * 4) {
+                    out.extend_from_slice(row);
                 }
             }
-            a = cropped;
-        }
-        let b = rgba(&ours).ok_or("cannot read our pixels")?;
+            out
+        };
+        let a = crop(rgba(&kit).ok_or("cannot read the PNG's pixels")?, kw);
+        let b = crop(rgba(&ours).ok_or("cannot read our pixels")?, ow);
         let mut mask = vec![false; (w * h) as usize];
         let add_mask = |r: Rect, mask: &mut Vec<bool>| {
             for y in (r.y * 2.0) as i32..(r.bottom() * 2.0) as i32 {

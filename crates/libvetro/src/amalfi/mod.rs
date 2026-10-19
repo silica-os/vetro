@@ -2,6 +2,7 @@
 
 pub mod button;
 pub mod foundation;
+pub mod progress;
 pub mod segments;
 pub mod sliders;
 pub mod steppers;
