@@ -269,8 +269,9 @@ impl Header {
             if let Some(label) = self.labels.get_mut(i) {
                 let layout = label.layout(&col.title, &style, col.align, tw, Some(1));
                 let lh = layout.size().height;
+                // The layer is named after the column (kit: `Name`, `Size` …).
                 cx.rec.text(
-                    "Title",
+                    &col.title,
                     Rect::new(
                         rect.x + x + col.title_inset,
                         rect.y + metrics::HEADER_TITLE_Y,

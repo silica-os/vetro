@@ -256,7 +256,9 @@ fn a_table_places_cells_in_columns() {
     assert_eq!(text(&ui, cells[1]), "r0 c1");
     let layers = ui.inspect_layers(t);
     assert!(layers.iter().any(|l| l.name == "Stripe"));
-    assert_eq!(layers.iter().filter(|l| l.name == "Title").count(), 3);
+    for t in ["Name", "Size", "Kind"] {
+        assert!(layers.iter().any(|l| l.name == t), "{t}");
+    }
     // Selection by keyboard, ⇧ extends.
     ui.set_focus(t, true);
     key(&mut ui, w, Key::Down, Mods::empty());

@@ -117,3 +117,11 @@ test that names it, until the kit is fixed.
 - Nested components with masters of their own that are not part of this crate's other families'
   builders (group boxes, the segmented control, the checkbox group, the search field, the menu
   bar of the full screen strip) are placeholders and masked.
+
+## Collections (`Apps/Mustache` file list masters)
+
+- `List Header` and `List Row`: the Name column's text box is 280 wide and ends 16 before
+  Date, where every other column is 12 from the next; the table's columns are evenly spaced
+  (12), so the header's Name title is 284 wide (deviation `Name#frame`).
+- `List Row` and `Column Row`: the plain rows' name sits at y 4 and the selected (and dimmed)
+  rows' at y 5; centred under the 20 pt icon it is at 5 (deviation on the plain rows).

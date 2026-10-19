@@ -78,6 +78,14 @@ impl GridView {
         self
     }
 
+    /// The padding around the tiles and the gap between them (the kit's: 16 and 16).
+    pub fn spacing(mut self, padding: f32, gap: f32) -> Self {
+        self.padding = padding.max(0.0);
+        self.gap = gap.max(0.0);
+        self.lines.height = self.tile.height + self.gap;
+        self
+    }
+
     fn set_tile(&mut self, tile: Size) {
         self.tile = Size::new(tile.width.max(1.0), tile.height.max(1.0));
         self.icon = self.icon.min(self.tile.height);
