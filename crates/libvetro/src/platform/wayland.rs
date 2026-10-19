@@ -224,6 +224,7 @@ pub struct Platform {
     text_input_enabled: bool,
     cursor: Cursor,
     pending: std::rc::Rc<std::cell::RefCell<Pending>>,
+    a11y: Option<crate::platform::a11y::Accessibility>,
     renderer: Renderer,
     gl: Option<crate::render::gl::GlContext>,
     vk: Option<crate::render::vulkan::VkContext>,
@@ -292,8 +293,15 @@ pub fn run(app_id: &str, setup: impl FnOnce(&mut Ui)) -> Result<(), PlatformErro
     }
     SPAWNER.with(|c| *c.borrow_mut() = Some(scheduler));
     SERVICES.with(|c| *c.borrow_mut() = Some(services));
+    let (ping, ping_source) = smithay_client_toolkit::reexports::calloop::ping::make_ping()
+        .map_err(|e| err(format!("ping: {e}")))?;
+    event_loop
+        .handle()
+        .insert_source(ping_source, |(), _, _| {})
+        .map_err(|e| err(format!("ping source: {e}")))?;
     let mut platform = Platform::new(conn, &globals, qh, event_loop.handle())?;
     platform.pending = pending;
+    platform.a11y = Some(crate::platform::a11y::Accessibility::new(ping));
     platform.app_id = app_id.to_string();
     setup(&mut platform.ui);
     platform.process();
@@ -363,6 +371,7 @@ impl Platform {
             text_input_enabled: false,
             cursor: Cursor::Default,
             pending: std::rc::Rc::default(),
+            a11y: None,
             renderer: Renderer::from_env(),
             gl: None,
             vk: None,
@@ -425,6 +434,9 @@ impl Platform {
             for r in requests {
                 self.handle_request(r);
             }
+        }
+        if let Some(a) = self.a11y.as_mut() {
+            a.sync(&mut self.ui);
         }
         let ids: Vec<WindowId> = self.surfaces.iter().map(|s| s.id).collect();
         for id in ids {
@@ -666,6 +678,11 @@ impl Platform {
             Some(m) if win.compositor_glass => Some(m.get_glass(&wl_ref, &self.qh, ())),
             _ => None,
         };
+        if let Some(a) = self.a11y.as_mut()
+            && matches!(role, Role::Toplevel(_))
+        {
+            a.add_window(id);
+        }
         self.surfaces.push(Surface {
             id,
             role,
@@ -687,6 +704,9 @@ impl Platform {
     }
 
     fn unmap_window(&mut self, id: WindowId) {
+        if let Some(a) = self.a11y.as_mut() {
+            a.remove_window(id);
+        }
         if let Some(pos) = self.surfaces.iter().position(|s| s.id == id) {
             let s = self.surfaces.remove(pos);
             if let Some(f) = s.fractional {
@@ -1629,6 +1649,9 @@ impl KeyboardHandler for Platform {
         if let Some(id) = self.window_of(surface) {
             self.keyboard_focus = Some(id);
             self.ui.set_window_active(id, true);
+            if let Some(a) = self.a11y.as_mut() {
+                a.set_focused(id, true);
+            }
         }
     }
 
@@ -1648,6 +1671,9 @@ impl KeyboardHandler for Platform {
             let toplevel = matches!(self.surface(id).map(|s| &s.role), Some(Role::Toplevel(_)));
             if toplevel {
                 self.ui.set_window_active(id, false);
+                if let Some(a) = self.a11y.as_mut() {
+                    a.set_focused(id, false);
+                }
             }
         }
     }

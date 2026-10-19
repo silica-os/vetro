@@ -35,6 +35,8 @@ rustix = { version = "1", features = ["fs", "pipe"] }
 zbus = "5.19"
 serde = { version = "1", features = ["derive"] }
 futures-lite = "2"
+accesskit_unix = "0.24"
+accesskit = "0.25"
 
 [dev-dependencies]
 async-io = "2"
