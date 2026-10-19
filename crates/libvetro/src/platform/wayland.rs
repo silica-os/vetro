@@ -137,16 +137,64 @@ pub enum Renderer {
 }
 
 impl Renderer {
-    /// `VETRO_RENDERER` (`vulkan`, `gl`, `software`); Vulkan by default, then GL, then
-    /// software, each falling back to the next when it fails.
+    /// `VETRO_RENDERER` (`vulkan`, `gl`, `software`); otherwise Vulkan, then GL, then
+    /// software, each falling back to the next when it fails. A backend that failed on this
+    /// machine is recorded ([`record_failure`]) and not tried again by later processes, so
+    /// a broken driver is never retried in a loop (until Settings1 has a key for it).
     fn from_env() -> Renderer {
         match std::env::var("VETRO_RENDERER").as_deref() {
             Ok("software") | Ok("shm") => Renderer::Software,
             Ok("gl") | Ok("gles") => Renderer::Gl,
-            _ => Renderer::Vulkan,
+            Ok("vulkan") => Renderer::Vulkan,
+            _ => {
+                let failed = failed_backends();
+                if !failed.iter().any(|f| f == "vulkan") {
+                    Renderer::Vulkan
+                } else if !failed.iter().any(|f| f == "gl") {
+                    Renderer::Gl
+                } else {
+                    Renderer::Software
+                }
+            }
         }
     }
 }
+
+fn failure_file() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state"))
+        })?;
+    Some(base.join("vetro/failed-renderers"))
+}
+
+/// The backends recorded as failing on this machine.
+fn failed_backends() -> Vec<String> {
+    failure_file()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Records that `backend` fails on this machine.
+fn record_failure(backend: &str) {
+    let Some(p) = failure_file() else { return };
+    let mut list = failed_backends();
+    if list.iter().any(|f| f == backend) {
+        return;
+    }
+    list.push(backend.to_string());
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(p, list.join("\n") + "\n");
+}
+
+impl Renderer {}
 
 /// Removes a file when dropped.
 struct RemoveOnDrop(std::path::PathBuf);
@@ -968,6 +1016,7 @@ impl Platform {
                 }
                 Err(e) => {
                     tracing::warn!("Vulkan unavailable ({e}): trying GL");
+                    record_failure("vulkan");
                     self.renderer = Renderer::Gl;
                     return false;
                 }
@@ -1016,6 +1065,7 @@ impl Platform {
             // A Vulkan that cannot present here (no dmabuf import in the compositor, a lost
             // surface): fall back to GL for the process, once (never retried in a loop).
             tracing::warn!("Vulkan frame: {e}: falling back to GL");
+            record_failure("vulkan");
             let w = s.vkw.take();
             s.frame_pending = false;
             s.wants_frame = true;
@@ -1044,6 +1094,7 @@ impl Platform {
                 }
                 Err(e) => {
                     tracing::warn!("GL unavailable ({e}): rendering in software");
+                    record_failure("gl");
                     self.renderer = Renderer::Software;
                     return false;
                 }
