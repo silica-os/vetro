@@ -13,7 +13,7 @@ task takes `/dev/shm/silica-vm.lock` per command). Local e2e: Ossido headless (s
 | Crate | What | State |
 |---|---|---|
 | `libvetro` (lib `vetro_lib`, cdylib + rlib + staticlib for packaging) | the toolkit | see below |
-| `vetro-sys` | the C ABI: types, ids, one function list (`for_each_function!`) | done (79 functions, VETRO_1.0) |
+| `vetro-sys` | the C ABI: types, ids, one function list (`for_each_function!`) | done (94 functions, VETRO_1.0) |
 | `vetro-kit` | safe Rust objects over the ABI | done for the current ABI |
 | `vetro` | declarative layer | done (v1), see below |
 | `vetro-test` | kit-parity harness | done; families added as components land |
@@ -47,10 +47,25 @@ task takes `/dev/shm/silica-vm.lock` per command). Local e2e: Ossido headless (s
   pop-up menus through the menu service).
 - **Components**: every kit family (table under "Components"), plus `TextView` (documents:
   line index with Fenwick sums, layout per visible line, 0.8 ms per key on a 10 MB document in
-  release) and the collections (`amalfi::collections`): `ListView`, a virtualised list (rows
-  made by a provider when they come into sight, dropped when they leave; a million rows cost
-  what is shown; selection with ⌘/⇧, keyboard, double click, overlay scroller on hover) and
-  `TableHeader` (columns, sort indicator, `ValueChanged` = column, negative when descending).
+  release) and the collections (`amalfi::collections`, one provider model: items are made
+  when they come into sight and dropped when they leave; a million rows cost what is shown):
+  `ListView` (inset, plain and bordered list-box looks), `TableView` (columns, header with
+  sort and column resizing, cells per row and column, in-place editing of editable columns,
+  alternating rows; outline mode over a `TreeSource` with chevrons, indentation, ←/→ and ⌥
+  deep expansion), `GridView` (reflowing tiles, 2-D keyboard), `TableHeader`; shared
+  selection (⌘/⇧, anchor and cursor), keyboard, double click/Return, overlay scroller;
+  selected rows are emphasized (`NodeFlags::EMPHASIZED`, `Theme::emphasize`) while focused
+  in an active window. `TabView` (window tabs on the kit's tab bar), `Toolbar` (kit unified
+  bar pieces after the window controls), form pieces as kinds (value, footer, box surface).
+- **Windows**: size limits honoured (#245: sizes clamped from the compositor, the app and
+  restoration); sheets are xdg-dialog modal dialogs with client-side decorations (Ossido on
+  the silica-desktop `vetro` branch centres them, veils the parent, keeps the focus and
+  moves them with the parent) and their parent takes no input; state restoration
+  (`core::restore`: autosave name → size and identified views' column widths, sort,
+  expanded nodes, split positions, selected tabs, collapsed panes, scroll offsets in
+  `$XDG_STATE_HOME/<app id>/windows/<name>.state`); full-size content with a toolbar
+  (`Ui::set_toolbar_height`, also on shown windows); frame alignment applied
+  (`.align()`: content at its own size aligned in a larger frame).
 - **App**: lifecycle (`core::app`), single instance and reopen through silica-desktop's app
   registry socket (`platform::registry`), drag and drop, xdg-activation, pinch gestures, idle
   inhibition, the AccessKit AT-SPI bridge (`platform::a11y`, verified in the VM when
@@ -63,9 +78,15 @@ task takes `/dev/shm/silica-vm.lock` per command). Local e2e: Ossido headless (s
   silica-menu-v1 (menu bar JSON model in a sealed memfd, pop-up menus), frame pacing by frame
   callbacks.
 - **Render backends**: Vulkan (primary; ash + Skia Ganesh VK, direct driver loading as the
-  embedder, CPU-synchronised frames, full repaint), GLES/EGL (buffer-age partial repaint,
+  embedder, two frames in flight with per-slot semaphores and fences around Skia's submit,
+  reduced shader variations, full repaint), GLES/EGL (buffer-age partial repaint,
   swap-with-damage), software (shm raster). Choice: `VETRO_RENDERER=vulkan|gl|software`,
-  falling back in that order.
+  falling back in that order. Raster caches of static subtrees (`core::raster`: stable for
+  3 frames, ≥ 24 items, no backdrop/glass/custom drawing; drawn at whole device pixels;
+  96 MB cap; `VETRO_RASTER_CACHE=0` turns it off; off in headless tests).
+- **Start-up**: bundled fonts through a custom empty font manager, fontconfig loaded on a
+  thread and added to the fallback when ready (text laid out again); `VETRO_STARTUP_TIMING`
+  prints the start-up stages and the first frame.
 - **Services** (`services`, zbus): typed proxies for every daemon interface and the portals,
   `AppearanceWatcher` (System1 look → `Appearance`, live), `SettingsWatcher` (key repeat,
   renderer key), `Observable`, `Services` facade. The platform runs them on the calloop
@@ -88,8 +109,12 @@ reconciler with property diffing and handler swapping; one batched re-render per
 (headless PNG). Implicit animations (`.animation`, `.transition` with FLIP moves and leaving
 views), `.sheet`, `.popover`, `.context_menu`; control builders bound to state
 (`controls.rs`); `list(count, row_height, |i| element)` mounts a tree per visible row and
-renders the live rows again with their component. Not yet: `.toolbar`, a `table` builder over
-`TableHeader` + `list`, `Form` builders.
+renders the live rows again with their component; `table`, `outline` and `collection` on the
+same model (`on_sort`, `sorted`, `on_edit`, `on_select`, `selection`, `on_open`, `on_expand`,
+`alternating`); `tabs` (`on_new_tab`, `on_close_tab`); `.alert(&Binding, AlertSpec)`; the
+kit's popover for `.popover`; `toolbar` (`toolbar_button`, `toolbar_group`, `toolbar_title`,
+`toolbar_search`) with `Element::toolbar` (full-size content); `form`, `form_section`,
+`form_row`, `form_row_with`, `form_footer`; `WindowSpec` (size limits, autosave).
 
 ## Decisions
 
@@ -161,11 +186,12 @@ deviations they cause are in [kit-issues.md](kit-issues.md).
 | Menus | `MenuItem`, `Menu`, `menus::present` (pop-up, pull-down, list, at a point) | 48 of 52 (+4 open buttons) | partial: `Item/App` needs app icons; the chosen-row blink is not timed |
 | Sidebars | `Row`, `Badge`, `EjectButton`, `Header`, `group`, `Footer`, `Panel` | 44 | done |
 | Titlebars | `Dot`, `WindowControls`, `TitleBlock`, `SearchPiece`, `SwitcherPiece`, `SendPiece`, `Strip`, `Spacer`, `TitleBar`, `Tab`, `TabBar` | 181 | done |
-| Popovers | `PopoverShape`, `Popover`, `popovers::present` (flips sides) | 84 | done |
-| Alerts | `Alert`, `alert()` (title, message, accessories, buttons, badge) | 26 | done (icons are bitmaps: masked) |
+| Popovers | `PopoverShape`, `Popover`, `popovers::present` (flips sides) | 84 | done; in the C ABI (`vetro_view_present_popover`) |
+| Alerts | `Alert`, `alert()` (title, message, accessories, buttons, badge) | 26 | done (icons are bitmaps: masked); in the C ABI (`vetro_alert_*`, presented as a sheet or a panel) |
 | Dialogs | `Dialog`, `Pane`, `browser`, `dialog_footer` | 12 | done |
-| Status Bar | `StatusItem`, `StatusBar` (plates of Increase Contrast and Reduce Transparency) | 22 | done |
+| Status Bar | `StatusItem`, `StatusBar` (plates of Increase Contrast and Reduce Transparency) | 22 | done; `STATUS_ITEM` kind (content kind, glyph, text) |
 | Windows | `WindowFrame`, `Block` | 40 | done for the window's own layers; nested components of other families (group boxes, segments, checkbox group, search field, menu bar) are placeholders there |
+| Collections (`Apps/Mustache` file list) | `TableHeader`, `TableView` rows, `ListView` rows, `GridView` tile | 16 | done (two kit quirks in kit-issues.md) |
 
 Shared changes made on the way: the harness expands nested symbol masters (path-addressed
 layers, instance text overrides applied in order) and walks groups; `Scene` has
@@ -178,19 +204,30 @@ tests live in `tests/common/mod.rs`. Open problems: app icons (Item/App, Pop-up/
 icons), the `Open` masters of buttons, the menu bar family, Windows with
 the real nested components, window controls placement (kit pitch 24 vs measured 23).
 
+## Performance (#254 budgets)
+
+`cargo run --release -p vetro-bench` (headless, CPU raster) and the e2e test:
+- typing in a 10 MB document: 0.6 ms per key (budget 8 ms);
+- a spinner beside 500 controls at 2×: 50 ms per frame without the raster cache, 3.5 ms with
+  it (120 Hz budget: 8.3 ms); hover change 0.14 ms;
+- cold start to the first frame: 125 ms in software on a local headless Ossido (budget
+  150 ms; the e2e test reports it). On the dev VM the Vulkan (Venus) first frame takes
+  seconds (driver load and pipeline compiles: Skia's persistent pipeline cache is not
+  reachable through skia-safe) and the VM's timings jitter by whole seconds;
+- shell memory: not measured yet (the shell is not on Vetro yet).
+
 ## Next
 
-1. Kinds registered after the components merge: list, table header, sidebar row/header/
-   group/panel, form and form row, title bar, tab bar, tab, status bar, text
-   (`VETRO_KIND_LIST` … `VETRO_KIND_TEXT`, 39–51). Still to expose through the ABI: alerts
-   (`alert()` as a presented panel), popovers, menus as views, status items (content enum).
-2. Collections: `table` and `outline` (rows with disclosure levels) and a collection (grid)
-   view on the same provider model; column resizing; type-select.
-3. Window features: sheets placed by Ossido, tabbing, restoration state, toolbar styles,
-   size limits (#245).
-4. Performance: raster caches for static subtrees, Vulkan frame pipelining, damage-based
-   Vulkan repaint (incremental present).
-5. Open kit problems: app icons (bitmaps in the kit), `Open` button masters, menu bar family,
+1. Shell on Vetro (§2) on silica-desktop branch `vetro` (worktree ~/build/wt-vetro-shell):
+   Lock, Menu bar, Dock, Faro/Launcher, Notifications, Control Center, Switcher, Screenshot
+   UI, per [shell-and-apps.md](shell-and-apps.md).
+2. Performance: damage-based Vulkan repaint (keep the previous image), a Skia persistent
+   pipeline cache (bindings), shell memory measurement.
+3. Collections: type-select, column reordering, drag and drop of rows, rubber-band
+   selection in grids.
+4. Open kit problems: app icons (bitmaps in the kit), `Open` button masters, menu bar family,
    window dot pitch (kit 24 vs tokens 23: design decision for the Mac session).
-6. `vetro-terminal` (port `crates/embedder/src/termgrid.rs` + `pty.rs`) with the apps phase.
-7. Then the shell (§2) and apps (§3): plan in [shell-and-apps.md](shell-and-apps.md).
+5. `vetro-terminal` (port `crates/embedder/src/termgrid.rs` + `pty.rs`) with the apps phase.
+6. Keep Vetro free of distribution-specific assumptions (Silica OS moves to a
+   BuildStream/freedesktop-sdk image): fonts are bundled, fontconfig and the services are
+   optional at run time.
