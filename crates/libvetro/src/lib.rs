@@ -10,6 +10,7 @@ pub mod color;
 pub mod core;
 pub mod geom;
 pub mod motion;
+pub mod platform;
 pub mod render;
 pub mod shape;
 pub mod style;

@@ -163,6 +163,9 @@ pub struct Window {
     pub last_click: (f64, Point, u32),
     /// Whether the last focus change came from the keyboard.
     pub keyboard_navigation: bool,
+    /// The app handles [`crate::core::value::Signal::CloseRequested`] itself (a document
+    /// that asks to save); otherwise the close button closes the window.
+    pub keep_on_close_request: bool,
 }
 
 impl Window {
@@ -190,6 +193,7 @@ impl Window {
             dark_override: None,
             last_click: (f64::NEG_INFINITY, Point::ZERO, 0),
             keyboard_navigation: false,
+            keep_on_close_request: false,
         }
     }
 }
