@@ -214,6 +214,12 @@ impl Scene {
                 ));
                 continue;
             };
+            // A text overridden in an instance keeps the width of the master's default text.
+            let kr = if kl.text_overridden {
+                Rect::new(kr.x, kr.y, ol.frame.width, kr.height)
+            } else {
+                kr
+            };
             check(
                 format!("{kit_path}#frame"),
                 rect_close(ol.frame, kr),
@@ -255,6 +261,23 @@ impl Scene {
             }
             _ => {}
         }
+        self.settle();
+    }
+
+    /// Moves the pointer to a point of the master (master coordinates) and lets transitions
+    /// settle.
+    pub fn hover_at(&mut self, p: Point) {
+        let w = Point::new(p.x + self.origin.x, p.y + self.origin.y);
+        self.ui.pointer_move(self.window, w, Mods::empty());
+        self.settle();
+    }
+
+    /// Presses the primary button at a point of the master and keeps it down.
+    pub fn press_at(&mut self, p: Point) {
+        let w = Point::new(p.x + self.origin.x, p.y + self.origin.y);
+        self.ui.pointer_move(self.window, w, Mods::empty());
+        self.ui
+            .pointer_down(self.window, w, Button::Left, Mods::empty());
         self.settle();
     }
 
@@ -386,6 +409,17 @@ impl Scene {
             let master = self.master.clone();
             for (_, r, l) in master.flatten() {
                 if l.kind == "Text" {
+                    // An overridden text may run past the default text's frame.
+                    let r = if l.text_overridden {
+                        Rect::new(
+                            r.x,
+                            r.y,
+                            (self.master.size().width - r.x).max(r.width),
+                            r.height,
+                        )
+                    } else {
+                        r
+                    };
                     add_mask(
                         r.translate(self.origin).round_out(1.0).inflate(1.0, 1.0),
                         &mut mask,
@@ -780,8 +814,12 @@ fn compare_content(
             // The kit's glyph is a symbol instance of the Icon Kit: its frame is the icon box.
             check(
                 format!("{kit_path}#glyphSize"),
-                close(*size, kl.frame.height),
-                format!("glyph {symbol} size {size}, kit box {:?}", kl.frame),
+                close(*size, kl.font.as_ref().map_or(kl.frame.height, |f| f.size)),
+                format!(
+                    "glyph {symbol} size {size}, kit box {:?}, font {:?}",
+                    kl.frame,
+                    kl.font.as_ref().map(|f| f.size)
+                ),
             );
             let _ = color;
         }

@@ -4,7 +4,6 @@ use vetro_lib::amalfi::foundation::ControlSize;
 use vetro_lib::amalfi::switch::{Switch, SwitchMetrics};
 use vetro_lib::amalfi::toggles::{Toggle, ToggleKind, ToggleState, toggle_group};
 use vetro_lib::core::{Button, Mods, Prop, Value};
-use vetro_lib::geom::Rect;
 use vetro_test::{KitMaster, Scene, Tolerance};
 
 /// Small controls: Sketch and Skia antialias tight smooth corners a little differently (the
@@ -159,10 +158,7 @@ fn checkbox_group_matches_the_kit() {
         });
         // Kit defect: the PNG has a 6 pt empty margin below the group.
         scene.png_margin = true;
-        let report = scene.auto_geometry_except(&["/Label"], &[]);
-        scene.extra_mask = [32.0, 56.0, 80.0]
-            .map(|y| Rect::new(36.0, y, 148.0, 20.0))
-            .to_vec();
+        let report = scene.auto_geometry(&[]);
         if !report.is_empty() {
             failures.push(format!("{name}:\n    {}", report.join("\n    ")));
             continue;
@@ -204,10 +200,7 @@ fn radio_group_matches_the_kit() {
         // Kit defects: the rows keep stale instance widths (140; the widest row is 124, as
         // `Toggles/Radio/With Label`), and the heading's frame is a fixed 40 for "Order"
         // (36 on the 8 pt grid). Labels sit at the same x either way.
-        scene.extra_mask = [32.0, 56.0, 80.0]
-            .map(|y| Rect::new(36.0, y, 120.0, 20.0))
-            .to_vec();
-        let report = scene.auto_geometry_except(&["/Label"], &["#frame", "Heading#frame"]);
+        let report = scene.auto_geometry(&["#frame", "Heading#frame"]);
         if !report.is_empty() {
             failures.push(format!("{name}:\n    {}", report.join("\n    ")));
         }

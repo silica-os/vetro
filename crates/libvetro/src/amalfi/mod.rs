@@ -2,6 +2,7 @@
 
 pub mod button;
 pub mod foundation;
+pub mod segments;
 pub mod switch;
 pub mod text;
 pub mod theme;

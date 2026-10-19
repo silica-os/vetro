@@ -302,6 +302,20 @@ impl Recorder {
 
     /// A symbol glyph by name in an icon box of `rect` (font size = the box's height).
     pub fn glyph(&mut self, name: &str, rect: Rect, symbol: &str, weight: u16, color: Color) {
+        self.glyph_sized(name, rect, rect.height, symbol, weight, color);
+    }
+
+    /// A symbol glyph of font size `size` in a box of `rect` (the kit's glyph box is the
+    /// font's line height, one point taller than the size at 20 pt).
+    pub fn glyph_sized(
+        &mut self,
+        name: &str,
+        rect: Rect,
+        size: f32,
+        symbol: &str,
+        weight: u16,
+        color: Color,
+    ) {
         let Some(ch) = crate::text::fonts::symbols::codepoint(symbol) else {
             tracing::debug!("unknown symbol {symbol}");
             return;
@@ -311,7 +325,7 @@ impl Recorder {
             rect,
             symbol: Rc::from(symbol),
             ch,
-            size: rect.height,
+            size,
             weight,
             color,
         });
