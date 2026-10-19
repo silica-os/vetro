@@ -59,6 +59,9 @@ pub struct Text {
     pub step: f32,
     /// Space after the text inside the box (the kit's label trailing).
     pub trailing: f32,
+    /// Wraps onto several lines in the width it is given (a paragraph) instead of one line
+    /// with an ellipsis.
+    pub wraps: bool,
     label: Label,
 }
 
@@ -73,6 +76,7 @@ impl Text {
             layer: "Label".to_string(),
             step: 0.0,
             trailing: 0.0,
+            wraps: false,
             label: Label::default(),
         }
     }
@@ -99,6 +103,12 @@ impl Text {
     pub fn whole(mut self, step: f32, trailing: f32) -> Text {
         self.step = step;
         self.trailing = trailing;
+        self
+    }
+
+    /// A paragraph: wraps in the width it is given.
+    pub fn wrapping(mut self) -> Text {
+        self.wraps = true;
         self
     }
 
@@ -130,6 +140,15 @@ impl Widget for Text {
 
     fn measure(&mut self, cx: &mut LayoutCx<'_>, p: Proposal) -> Size {
         let theme = cx.theme();
+        if self.wraps
+            && let Some(avail) = p.width.filter(|w| w.is_finite())
+        {
+            let style = theme.text(self.token, self.role.color(&theme));
+            let layout = self
+                .label
+                .layout(&self.text, &style, self.align, avail.max(0.0), None);
+            return Size::new(avail.max(0.0), layout.size().height);
+        }
         let natural = self.natural(&theme);
         let w = match p.width {
             Some(w) if w.is_finite() => natural.min(w.max(0.0)),
@@ -144,9 +163,13 @@ impl Widget for Text {
         let r = cx.bounds();
         let style = theme.text(self.token, self.role.color(&theme));
         let width = (r.width - self.trailing).max(0.0);
-        let layout = self
-            .label
-            .layout(&self.text, &style, self.align, width, Some(1));
+        let layout = self.label.layout(
+            &self.text,
+            &style,
+            self.align,
+            width,
+            if self.wraps { None } else { Some(1) },
+        );
         cx.rec.text(
             &self.layer,
             Rect::new(r.x, r.y, r.width, r.height),
