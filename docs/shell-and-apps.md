@@ -1,9 +1,9 @@
 # The shell and the apps on Vetro (plan)
 
 Plan sections §2 and §3 of [silica-desktop#254](https://github.com/silica-os/silica-desktop/issues/254).
-Not started: they begin once the toolkit milestone (core, components with kit parity,
-declarative layer, services, C API) passes its tests. This file says how each piece maps onto
-Vetro, so the work can be split.
+The shell is under way on silica-desktop's `vetro` branch (`crates/shell`): lock screen,
+wallpaper, menu bar and Dock first versions (state in [STATUS.md](STATUS.md) "Next"). This
+file says how each piece maps onto Vetro, so the work can be split.
 
 ## Shell (`silica-desktop/crates/shell`, one process)
 

@@ -218,9 +218,20 @@ the real nested components, window controls placement (kit pitch 24 vs measured 
 
 ## Next
 
-1. Shell on Vetro (§2) on silica-desktop branch `vetro` (worktree ~/build/wt-vetro-shell):
-   Lock, Menu bar, Dock, Faro/Launcher, Notifications, Control Center, Switcher, Screenshot
-   UI, per [shell-and-apps.md](shell-and-apps.md).
+1. Shell on Vetro (§2): silica-desktop branch `vetro` (worktree ~/build/wt-vetro-shell,
+   crate `crates/shell`, binary `silica-shell`; libvetro from the sibling `../vetro`
+   checkout, the workspace patches vetro's git dependency on silica-desktop's protocols to
+   the local crates). Done: the lock screen (session lock per output, wallpaper, clock and
+   date, user block, password field states and the shake, unlock through System1; e2e on a
+   headless Ossido), the desktop wallpaper (Background layer), the menu bar (system menu,
+   the focused app's menus from `app_menu`, submenus, the clock), the Dock (pinned and
+   running apps, activate/launch, running discs, hover label, Silica and theme icons).
+   Ossido on that branch: xdg-dialog sheets (centred, modal, veiled parent, following).
+   Libvetro for the shell (Rust API): `core::shell` (outputs, unlock, the
+   silica_shell_manager_v1 channel, ext-foreign-toplevel-list), `platform::post`, popups of
+   layer surfaces. Next, in order: the menu bar's status items and the lock screen's status
+   bar, Dock magnification/bounce/menus/Trash/stacks, Faro and the Launcher, notifications,
+   Control Center, the switcher, the screenshot UI; then `xtask --toolkit=vetro`.
 2. Performance: damage-based Vulkan repaint (keep the previous image), a Skia persistent
    pipeline cache (bindings), shell memory measurement.
 3. Collections: type-select, column reordering, drag and drop of rows, rubber-band
