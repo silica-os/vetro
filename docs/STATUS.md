@@ -144,7 +144,7 @@ deviations they cause are in [kit-issues.md](kit-issues.md).
 | Steppers | `Stepper`, `stepper_with_field` | 68 | done |
 | Progress | `ProgressBar`, `CircularProgress`, `Spinner` | 84 | done |
 | Disclosure | `Disclosure`, `DisclosureGroup` | 44 | done |
-| Fields | `TextField` (text, secure, area, search, tokens, combo, value), `Token`, `ClearButton`, `ComboButton` | 126 of 128 | partial: `Combo Box/Open` (the list is a menu, `menus::present` with `Placement::List` is ready) is not wired |
+| Fields | `TextField` (text, secure, area, search, tokens, combo, value), `Token`, `ClearButton`, `ComboButton` | 128 | done (the combo list is a menu popup, `TextField::choose_in`; fields send `TextInput` and `TextInputSurrounding`) |
 | Buttons | `PushButton`, `IconButton`, `HelpButton`, `LinkButton`, `GradientButtons`, `ToolbarButton`, `MenuButton` | 214 of 220 | partial: pop-up/pull-down `Open` masters geometry only (the kit's glass hides the button), `App` masters need app icons |
 | Group Boxes | `GroupBox` | 8 | done |
 | Wells | `ColorWell`, `ImageWell`, swatch grid, colour panel popup | 74 | done |
@@ -167,7 +167,7 @@ ticking; the tooltip presenter is part of `Ui`; `Text` has a wrapping paragraph 
 also has `ignore_aspects` (a kit defect on every layer, e.g. the dark glass blur) and
 `skip_trees` (nested components replaced by placeholders); kit-driven builders shared by the
 tests live in `tests/common/mod.rs`. Open problems: app icons (Item/App, Pop-up/App, alert
-icons), the `Open` masters of buttons, the combo box list, the menu bar family, Windows with
+icons), the `Open` masters of buttons, the menu bar family, Windows with
 the real nested components, window controls placement (kit pitch 24 vs measured 23).
 
 ## Next

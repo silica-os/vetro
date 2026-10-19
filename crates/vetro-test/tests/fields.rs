@@ -1,6 +1,9 @@
 //! Kit parity of `Fields`: text, secure, search and token fields, text areas, tokens, the
 //! clear and combo buttons, combo boxes and fields with an inline button.
 
+mod common;
+
+use common::{Fixed, menu_view};
 use vetro_lib::amalfi::button::PushButton;
 use vetro_lib::amalfi::fields::{ClearButton, ComboButton, TextField, Token};
 use vetro_lib::amalfi::foundation::ControlSize;
@@ -366,4 +369,68 @@ fn inline_button_fields_match_the_kit() {
         }
     }
     finish(failures, names.len());
+}
+
+#[test]
+fn open_combo_boxes_match_the_kit() {
+    let names = KitMaster::names("Fields/Combo Box/Open");
+    assert_eq!(names.len(), 2, "{names:?}");
+    let mut failures = Vec::new();
+    for name in &names {
+        let Ok(mut scene) = Scene::load(name) else {
+            continue;
+        };
+        let (Some(combo), Some(list)) = (
+            scene.master.layer("Combo box").cloned(),
+            scene.master.layer("List").cloned(),
+        ) else {
+            failures.push(format!("{name}: no combo box or list"));
+            continue;
+        };
+        let value = combo
+            .children
+            .iter()
+            .find(|c| c.name == "Value")
+            .and_then(|c| c.text.clone())
+            .unwrap_or_default();
+        let master_size = scene.master.size();
+        let mut field_id = None;
+        scene.mount_sized(master_size, |ui| {
+            let f = ui.create(Fixed {
+                size: master_size,
+                rects: vec![combo.frame, list.frame],
+            });
+            let field = ui.create(
+                TextField::combo(&["Lemon", "Orange", "Pear"])
+                    .with_size(ControlSize::Regular)
+                    .with_text(&value),
+            );
+            let _ = ui.set(field, Prop::Identifier, Value::from("Combo box"));
+            field_id = Some(field);
+            let menu = menu_view(ui, &list);
+            let _ = ui.set(menu, Prop::Identifier, Value::from("List"));
+            ui.add_child(f, field);
+            ui.add_child(f, menu);
+            f
+        });
+        scene.png_margin = true;
+        scene.ignore_aspects = vec!["#blurs".to_string()];
+        if let Some(field) = field_id {
+            let mut a = scene.ui.appearance;
+            a.full_keyboard_access = true;
+            scene.ui.set_appearance(a);
+            scene.ui.set_focus(field, true);
+        }
+        scene.settle();
+        // The caret blinks; the list's separators share a name (see Menus).
+        let mut skip: Vec<&str> = SKIP.to_vec();
+        skip.extend(["Combo box/Caret", "Separator/Rest/Line"]);
+        if let Some(r) = scene.master.rect_in_master("Combo box/Caret") {
+            scene.extra_mask.push(r.inflate(1.0, 1.0));
+        }
+        if let Some(r) = check(&mut scene, name, &skip, &[], FIELD) {
+            failures.push(r);
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
