@@ -48,6 +48,17 @@ pub enum ShellEvent {
         /// Where (desktop coordinates).
         at: Point,
     },
+    /// A window appeared or changed (ext-foreign-toplevel-list).
+    Toplevel {
+        /// Its stable identifier.
+        identifier: String,
+        /// Its app.
+        app_id: String,
+        /// Its title.
+        title: String,
+    },
+    /// A window closed.
+    ToplevelClosed(String),
     /// An app's menu bar model (silica-menu-v1 JSON).
     AppMenu {
         /// The app.

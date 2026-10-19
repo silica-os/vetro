@@ -84,6 +84,10 @@ use silica_protocols::menu::client::silica_popup_menu_v1::{self, SilicaPopupMenu
 use silica_protocols::shell::client::silica_shell_manager_v1::{self, SilicaShellManagerV1};
 use silica_protocols::window::client::silica_window_manager_v1::SilicaWindowManagerV1;
 use silica_protocols::window::client::silica_window_v1::{self, SilicaWindowV1};
+use wayland_protocols::ext::foreign_toplevel_list::v1::client::{
+    ext_foreign_toplevel_handle_v1::{self, ExtForeignToplevelHandleV1},
+    ext_foreign_toplevel_list_v1::{self, ExtForeignToplevelListV1},
+};
 
 use crate::core::event::{Button, Key, KeyEvent, Mods, Phase};
 use crate::core::menu::{MenuItem, PopupKind, PopupMenuRequest};
@@ -314,6 +318,11 @@ pub struct Platform {
     menu_manager: Option<SilicaMenuManagerV1>,
     /// Ossido's shell channel (the shell process only, [`Ui::connect_shell`]).
     shell: Option<SilicaShellManagerV1>,
+    /// The windows of the session (ext-foreign-toplevel-list, shell process only).
+    toplevels: Option<ExtForeignToplevelListV1>,
+    /// What each window handle said so far: identifier, app id, title.
+    toplevel_info:
+        std::collections::HashMap<wayland_client::backend::ObjectId, (String, String, String)>,
     menu: Option<SilicaMenuV1>,
     popup_menus: Vec<(SilicaPopupMenuV1, u64)>,
     surfaces: Vec<Surface>,
@@ -586,6 +595,8 @@ impl Platform {
             window_manager: globals.bind(&qh, 1..=4, ()).ok(),
             menu_manager: globals.bind(&qh, 1..=2, ()).ok(),
             shell: None,
+            toplevels: None,
+            toplevel_info: std::collections::HashMap::new(),
             menu: None,
             popup_menus: Vec::new(),
             compositor,
@@ -725,6 +736,11 @@ impl Platform {
                     s.size = size;
                     s.wants_frame = true;
                 }
+                // A layer surface asks the compositor for its new size.
+                if let Some(Role::Layer(l)) = self.surface(id).map(|s| &s.role) {
+                    l.set_size(size.width.max(0.0) as u32, size.height.max(0.0) as u32);
+                    l.commit();
+                }
                 let scale = self.surface(id).map(|s| s.scale).unwrap_or(1.0);
                 self.ui.resize_window(id, size, scale);
             }
@@ -745,6 +761,12 @@ impl Platform {
                         Ok(m) => self.shell = Some(m),
                         Err(e) => tracing::warn!("no shell channel: {e}"),
                     }
+                }
+                if self.toplevels.is_none() {
+                    self.toplevels = self
+                        .registry
+                        .bind_one::<ExtForeignToplevelListV1, _, _>(&self.qh, 1..=1, ())
+                        .ok();
                 }
             }
             Request::Shell(req) => self.shell_request(req),
@@ -2801,6 +2823,58 @@ delegate_layer!(Platform);
 delegate_session_lock!(Platform);
 delegate_data_device!(Platform);
 delegate_registry!(Platform);
+
+impl Dispatch<ExtForeignToplevelListV1, ()> for Platform {
+    fn event(
+        _: &mut Self,
+        _: &ExtForeignToplevelListV1,
+        _: ext_foreign_toplevel_list_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+
+    wayland_client::event_created_child!(Platform, ExtForeignToplevelListV1, [
+        ext_foreign_toplevel_list_v1::EVT_TOPLEVEL_OPCODE => (ExtForeignToplevelHandleV1, ()),
+    ]);
+}
+
+impl Dispatch<ExtForeignToplevelHandleV1, ()> for Platform {
+    fn event(
+        state: &mut Self,
+        handle: &ExtForeignToplevelHandleV1,
+        event: ext_foreign_toplevel_handle_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        use crate::core::shell::ShellEvent;
+        use ext_foreign_toplevel_handle_v1::Event as E;
+        let id = handle.id();
+        let info = state.toplevel_info.entry(id.clone()).or_default();
+        match event {
+            E::Identifier { identifier } => info.0 = identifier,
+            E::AppId { app_id } => info.1 = app_id,
+            E::Title { title } => info.2 = title,
+            E::Done => {
+                let (identifier, app_id, title) = info.clone();
+                state.ui.shell_event(ShellEvent::Toplevel {
+                    identifier,
+                    app_id,
+                    title,
+                });
+            }
+            E::Closed => {
+                if let Some((identifier, _, _)) = state.toplevel_info.remove(&id) {
+                    state.ui.shell_event(ShellEvent::ToplevelClosed(identifier));
+                }
+                handle.destroy();
+            }
+            _ => {}
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
