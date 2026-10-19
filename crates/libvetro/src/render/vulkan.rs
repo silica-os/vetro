@@ -126,6 +126,21 @@ impl VkContext {
             unsafe {
                 match of {
                     skvk::GetProcOf::Instance(i, name) => {
+                        // Calling the global queries (no instance) makes the loader open every
+                        // installed driver: Skia gets this context's answers instead.
+                        if i.is_null() {
+                            let wanted = CStr::from_ptr(name);
+                            tracing::debug!("Vulkan global query {wanted:?}");
+                            if wanted == c"vkEnumerateInstanceVersion" {
+                                return enumerate_instance_version as *const c_void;
+                            }
+                            if wanted == c"vkEnumerateInstanceExtensionProperties" {
+                                return enumerate_instance_extensions as *const c_void;
+                            }
+                            if wanted == c"vkEnumerateInstanceLayerProperties" {
+                                return enumerate_instance_layers as *const c_void;
+                            }
+                        }
                         let i = vk::Instance::from_raw(i as u64);
                         get_instance(i, name).map_or(std::ptr::null(), |f| f as *const c_void)
                     }
@@ -646,6 +661,68 @@ impl Drop for VkContext {
     }
 }
 
+/// The instance version Skia asks for (the one this context's instance was made with).
+unsafe extern "system" fn enumerate_instance_version(version: *mut u32) -> vk::Result {
+    if version.is_null() {
+        return vk::Result::ERROR_INITIALIZATION_FAILED;
+    }
+    // SAFETY: Vulkan's contract: a valid pointer to write the version into.
+    unsafe { *version = vk::API_VERSION_1_1 };
+    vk::Result::SUCCESS
+}
+
+/// The instance extensions Skia asks for: the ones this context's instance enabled.
+unsafe extern "system" fn enumerate_instance_extensions(
+    layer: *const c_char,
+    count: *mut u32,
+    props: *mut vk::ExtensionProperties,
+) -> vk::Result {
+    if count.is_null() {
+        return vk::Result::ERROR_INITIALIZATION_FAILED;
+    }
+    let list: &[&CStr] = if layer.is_null() {
+        INSTANCE_EXTENSIONS
+    } else {
+        &[]
+    };
+    // SAFETY: Vulkan's two-call contract: `count` is valid; `props`, when not null, holds
+    // `*count` elements.
+    unsafe {
+        if props.is_null() {
+            *count = list.len() as u32;
+            return vk::Result::SUCCESS;
+        }
+        let n = (*count as usize).min(list.len());
+        for (i, name) in list.iter().take(n).enumerate() {
+            let mut p = vk::ExtensionProperties::default();
+            for (d, b) in p.extension_name.iter_mut().zip(name.to_bytes()) {
+                *d = *b as c_char;
+            }
+            p.spec_version = 1;
+            *props.add(i) = p;
+        }
+        *count = n as u32;
+        if n < list.len() {
+            vk::Result::INCOMPLETE
+        } else {
+            vk::Result::SUCCESS
+        }
+    }
+}
+
+/// No layers are enabled on this context's instance.
+unsafe extern "system" fn enumerate_instance_layers(
+    count: *mut u32,
+    _props: *mut vk::LayerProperties,
+) -> vk::Result {
+    if count.is_null() {
+        return vk::Result::ERROR_INITIALIZATION_FAILED;
+    }
+    // SAFETY: Vulkan's contract: a valid pointer to the count.
+    unsafe { *count = 0 };
+    vk::Result::SUCCESS
+}
+
 /// `vk_icdGetInstanceProcAddr`, the loader-driver interface's entry point.
 type DriverEntry = unsafe extern "system" fn(vk::Instance, *const c_char) -> vk::PFN_vkVoidFunction;
 
@@ -659,7 +736,15 @@ fn create_instance(
 ) -> Result<(ash::Instance, Vec<libloading::Library>), String> {
     let mut libraries = Vec::new();
     let mut entries: Vec<DriverEntry> = Vec::new();
-    for d in super::vulkan_drivers::for_this_machine().unwrap_or_default() {
+    let chosen = super::vulkan_drivers::for_this_machine();
+    tracing::info!(
+        "Vulkan drivers for this machine: {:?}",
+        chosen.as_ref().map(|d| d
+            .iter()
+            .map(|x| x.library.display().to_string())
+            .collect::<Vec<_>>())
+    );
+    for d in chosen.unwrap_or_default() {
         // SAFETY: a Vulkan driver named by its installed manifest, the library the loader
         // itself would open.
         let Ok(lib) = (unsafe { libloading::Library::new(&d.library) }) else {
@@ -689,7 +774,10 @@ fn create_instance(
             .push_next(&mut list);
         // SAFETY: valid structure; the drivers stay loaded with the instance.
         match unsafe { entry.create_instance(&create, None) } {
-            Ok(i) => return Ok((i, libraries)),
+            Ok(i) => {
+                tracing::info!("Vulkan: {} driver(s) loaded directly", libraries.len());
+                return Ok((i, libraries));
+            }
             Err(e) => tracing::info!("Vulkan with this machine's drivers only: {e:?}, loading all"),
         }
     }

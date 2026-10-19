@@ -954,6 +954,8 @@ impl Ui {
         if let Some(w) = self.window_mut(window) {
             w.visible = true;
             w.needs_layout = true;
+            // A new surface: its input region is sent again.
+            w.input_region = None;
         }
         self.requests.push(Request::ShowWindow(window));
         self.request_frame(window);
@@ -1088,6 +1090,12 @@ impl Ui {
                 .filter(|r| r.width.is_finite() && r.height.is_finite())
                 .collect()
         });
+        if let Some(w) = self.window_mut(window) {
+            if w.input_region.as_ref() == Some(&region) {
+                return;
+            }
+            w.input_region = Some(region.clone());
+        }
         self.requests.push(Request::SetInputRegion(window, region));
     }
 

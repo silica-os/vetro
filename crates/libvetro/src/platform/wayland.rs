@@ -270,6 +270,18 @@ pub fn spawn(fut: impl std::future::Future<Output = ()> + 'static) -> bool {
     SPAWNER.with(|c| c.borrow().as_ref().is_some_and(|s| s.schedule(fut).is_ok()))
 }
 
+/// Gives the memory the allocator holds free back to the system (glibc keeps freed blocks of
+/// large temporary allocations, such as a decoded image that was scaled down). Cheap; call
+/// it after a burst of allocations.
+#[allow(unsafe_code)]
+pub fn trim_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim takes a padding size and only rearranges the allocator's own state.
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
 /// The system services of this process (inside [`run`]).
 pub fn services() -> Option<std::rc::Rc<crate::services::Services>> {
     SERVICES.with(|c| c.borrow().clone())
@@ -2225,21 +2237,29 @@ impl SessionLockHandler for Platform {
     }
 }
 
+impl Platform {
+    /// The seat the popups grab and the data device and text input hang from: the first one.
+    fn adopt_seat(&mut self, qh: &QueueHandle<Self>, seat: &wl_seat::WlSeat) {
+        if self.seat.is_some() {
+            return;
+        }
+        if let Some(mgr) = &self.data_devices {
+            self.data_device = Some(mgr.get_data_device(qh, seat));
+        }
+        if let Some(m) = &self.text_input_manager {
+            self.text_input = Some(m.get_text_input(seat, qh, ()));
+        }
+        self.seat = Some(seat.clone());
+    }
+}
+
 impl SeatHandler for Platform {
     fn seat_state(&mut self) -> &mut SeatState {
         &mut self.seats
     }
 
     fn new_seat(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
-        if self.seat.is_none() {
-            if let Some(mgr) = &self.data_devices {
-                self.data_device = Some(mgr.get_data_device(qh, &seat));
-            }
-            if let Some(m) = &self.text_input_manager {
-                self.text_input = Some(m.get_text_input(&seat, qh, ()));
-            }
-            self.seat = Some(seat);
-        }
+        self.adopt_seat(qh, &seat);
     }
 
     fn new_capability(
@@ -2249,6 +2269,9 @@ impl SeatHandler for Platform {
         seat: wl_seat::WlSeat,
         cap: Capability,
     ) {
+        // A seat present at startup is bound by `SeatState::new`, which never calls
+        // `new_seat`: its first capability adopts it.
+        self.adopt_seat(qh, &seat);
         match cap {
             Capability::Keyboard if self.keyboard.is_none() => {
                 match self.seats.get_keyboard(qh, &seat, None) {
@@ -2574,14 +2597,7 @@ impl DataDeviceHandler for Platform {
         }
     }
 
-    fn motion(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &WlDataDevice,
-        x: f64,
-        y: f64,
-    ) {
+    fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, x: f64, y: f64) {
         if let Some(w) = self.dnd_window {
             self.ui.drag_motion(w, Some(Point::new(x as f32, y as f32)));
         }

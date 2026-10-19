@@ -222,9 +222,12 @@ first, Escape last).
   150 ms; the e2e test reports it). On the dev VM the Vulkan (Venus) first frame takes
   seconds (driver load and pipeline compiles: Skia's persistent pipeline cache is not
   reachable through skia-safe) and the VM's timings jitter by whole seconds;
-- shell memory: the Vetro shell in the VM (Vulkan, Venus) was 166 MB resident with full-size
-  icon and wallpaper decodes; icons are now kept at 256 px and wallpapers at the output's
-  size (to be measured again). The Flutter shell's embedder starts at 73 MB.
+- shell memory: the Vetro shell in the VM (Vulkan, Venus) was 179 MB resident. Now 75–79 MB
+  (the Flutter shell's embedder: about 73 MB): images are decoded without Skia's cache and
+  downscaled (icons 256 px, wallpapers at the output's size), Skia's resource cache is
+  capped at 8 MB, `platform::trim_memory` returns freed heap after startup, and Skia's
+  global Vulkan queries (null instance) are answered by Vetro, so the loader no longer opens
+  every installed driver (only the machine's own driver is loaded).
 
 ## Next
 
@@ -254,9 +257,16 @@ first, Escape last).
    - app switcher (switcher.* from Ossido), screenshot thumbnail, selection and bar;
    - Gatekeeper, administrator authentication and Force Quit dialogs.
    Ossido on that branch: xdg-dialog sheets, parentless modal dialogs centred on screen.
-   Next: Dock dragging, auto-hide, badges, minimised windows; stack fan and list views;
-   notification actions and replies; the screenshot editor (#154) and recording (#153);
-   Notification Center widgets; measure the shell's memory again.
+   Then (toolkit4): Dock drag to reorder, drag out and onto the Trash, folders in and out,
+   files dropped from other apps with spring-loading, auto-hide, badges and progress
+   (LauncherEntry), attention, minimised windows with thumbnails, stack fan/grid/list views
+   and options, piles 4% smaller per depth; notification actions, Details and inline
+   replies; the Flutter shell's Dock tests ported. Platform fixes found in the VM: the seat
+   present at startup is adopted (popups now grab and close on a press outside; the data
+   device and text input exist), unchanged input regions are not sent again.
+   Next: the screenshot editor stays an app (#154, not in the shell); recording (#153);
+   Notification Center widgets need a kit design first; one process per shell role
+   (silica-desktop#261).
 2. Performance: a real Skia persistent shader cache needs a skia-safe binding.
 3. Collections: type-select, column reordering, drag and drop of rows, rubber-band
    selection in grids.

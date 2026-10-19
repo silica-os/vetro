@@ -185,6 +185,8 @@ pub struct Window {
     pub pointer: Option<Point>,
     /// Damage since the last frame (points).
     pub damage: Rect,
+    /// The input region last asked for (`None`: never), so an unchanged one is not sent again.
+    pub input_region: Option<Option<Vec<Rect>>>,
     /// The layout must run.
     pub needs_layout: bool,
     /// A frame is wanted.
@@ -236,6 +238,7 @@ impl Window {
             capture: None,
             pointer: None,
             damage: Rect::from_size(size),
+            input_region: None,
             needs_layout: true,
             needs_frame: true,
             visible: false,

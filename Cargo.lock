@@ -716,6 +716,7 @@ dependencies = [
  "calloop",
  "futures-lite",
  "khronos-egl",
+ "libc",
  "libloading",
  "rustix",
  "serde",

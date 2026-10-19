@@ -33,6 +33,7 @@ wayland-egl = "0.32"
 libloading = "0.8"
 ash = { version = "0.38", default-features = false, features = ["loaded", "std"] }
 rustix = { version = "1", features = ["fs", "pipe"] }
+libc = "0.2"
 zbus = "5.19"
 serde = { version = "1", features = ["derive"] }
 futures-lite = "2"
