@@ -9,10 +9,19 @@
 
 use std::path::{Path, PathBuf};
 
+#[path = "build/tokens.rs"]
+mod tokens;
+
 fn main() {
     let out = PathBuf::from(std::env::var_os("OUT_DIR").unwrap_or_default());
     link_shims(&out);
+    if let Err(e) = tokens::generate(&out) {
+        println!("cargo:warning=tokens: {e}");
+        std::process::exit(1);
+    }
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=build/tokens.rs");
+    println!("cargo:rerun-if-changed=data");
 }
 
 /// Symlinks `lib<name>.so` → the versioned runtime library when the unversioned one is

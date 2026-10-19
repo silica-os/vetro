@@ -5,8 +5,11 @@
 //! `services` (system clients), with the C ABI in `ffi`. Every module is usable headless:
 //! a window can render into a Skia raster surface for tests.
 
+pub mod amalfi;
 pub mod color;
 pub mod geom;
+pub mod motion;
 pub mod render;
 pub mod shape;
 pub mod style;
+pub mod text;

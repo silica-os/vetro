@@ -11,6 +11,9 @@ publish = false
 name = "vetro_lib"
 crate-type = ["cdylib", "rlib"]
 
+[build-dependencies]
+serde_json = "1"
+
 [dependencies]
 skia-safe.workspace = true
 tracing = "0.1"
