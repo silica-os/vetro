@@ -357,6 +357,8 @@ void vetro_canvas_text(VetroCanvas *canvas, float x, float y, const char *text, 
 void vetro_canvas_glyph(VetroCanvas *canvas, VetroRect rect, const char *symbol, uint32_t weight, VetroColor color);
 VetroStatus vetro_measure_text(const char *text, const char *family, float size, uint32_t weight, float *out_width, float *out_height);
 VetroStatus vetro_view_perform(VetroView *view, uint32_t action);
+VetroWindow *vetro_view_window(VetroView *view);
+VetroWindow *vetro_window_new_sheet(VetroWindow *parent, float width, float height);
 
 #ifdef __cplusplus
 }

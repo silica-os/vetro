@@ -407,6 +407,9 @@ macro_rules! for_each_function {
             fn vetro_measure_text(text: *const ::std::ffi::c_char, family: *const ::std::ffi::c_char, size: f32, weight: u32, out_width: *mut f32, out_height: *mut f32) -> $crate::VetroStatus;
             // Accessibility actions (assistive technologies, tests).
             fn vetro_view_perform(view: *mut $crate::VetroView, action: u32) -> $crate::VetroStatus;
+            // Windows of views; sheets.
+            fn vetro_view_window(view: *mut $crate::VetroView) -> *mut $crate::VetroWindow;
+            fn vetro_window_new_sheet(parent: *mut $crate::VetroWindow, width: f32, height: f32) -> *mut $crate::VetroWindow;
         }
     };
 }

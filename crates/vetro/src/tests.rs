@@ -133,3 +133,36 @@ fn preview_renders_a_png() {
     .unwrap();
     assert_eq!(png.get(1..4), Some(&b"PNG"[..]));
 }
+
+struct WithSheet {
+    shown: Rc<Cell<u32>>,
+}
+
+impl Component for WithSheet {
+    fn body(&self, cx: &mut Cx) -> Element {
+        let open = cx.state(|| false);
+        let o2 = open.clone();
+        let shown = self.shown.clone();
+        column(button("Open").id("open").on_activate(move || o2.set(true)))
+            .sheet(&open.binding(), (200.0, 100.0), move || {
+                shown.set(shown.get() + 1);
+                label("In the sheet")
+            })
+            .context_menu(vec![
+                crate::MenuEntry::item("Copy", || {}),
+                crate::MenuEntry::separator(),
+            ])
+    }
+}
+
+#[test]
+fn sheets_open_from_state() {
+    let rt = Headless::new().unwrap();
+    let shown = Rc::new(Cell::new(0));
+    let s2 = shown.clone();
+    let root = mount(host(), move || WithSheet { shown: s2.clone() });
+    assert_eq!(shown.get(), 0);
+    root.host().find("open").unwrap().click().unwrap();
+    rt.advance(0.01);
+    assert_eq!(shown.get(), 1, "the sheet's content rendered once");
+}

@@ -1390,6 +1390,32 @@ pub extern "C" fn vetro_view_perform(view: *mut VetroView, action: u32) -> Vetro
     })
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn vetro_view_window(view: *mut VetroView) -> *mut VetroWindow {
+    guard(std::ptr::null_mut(), || {
+        view_id(view)
+            .and_then(|v| with_ui(|ui| ui.window_of(v)))
+            .ok()
+            .flatten()
+            .map_or(std::ptr::null_mut(), window_ptr)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn vetro_window_new_sheet(
+    parent: *mut VetroWindow,
+    width: f32,
+    height: f32,
+) -> *mut VetroWindow {
+    guard(std::ptr::null_mut(), || match window_id(parent) {
+        Ok(p) => new_window(WindowKind::Sheet { parent: p }, Size::new(width, height)),
+        Err(s) => {
+            set_last(s);
+            std::ptr::null_mut()
+        }
+    })
+}
+
 /// Compile-time check: every function of the ABI list is defined here with exactly its
 /// signature.
 macro_rules! check_signatures {

@@ -8,8 +8,44 @@ use std::rc::{Rc, Weak};
 
 use vetro_kit::{Connection, Prop, Signal, View as KitView};
 
-use crate::element::{Element, Handler, Key, PValue, What, same_what};
-use crate::{Cx, Scheduler, Slots};
+use crate::element::{
+    Effects, Element, Handler, Key, MenuEntry, PValue, Presentation, What, same_what,
+};
+use crate::{Component, Cx, Root, Scheduler, Slots};
+
+/// A presentation's content as a component.
+struct FnComponent(Rc<dyn Fn() -> Element>);
+
+impl Component for FnComponent {
+    fn body(&self, _cx: &mut Cx) -> Element {
+        (self.0)()
+    }
+}
+
+/// An open sheet or popover.
+struct Shown {
+    window: vetro_kit::Window,
+    _root: Root,
+    content: Rc<RefCell<Rc<dyn Fn() -> Element>>>,
+    _close: Option<Connection>,
+}
+
+impl Drop for Shown {
+    fn drop(&mut self) {
+        let _ = self.window.close();
+    }
+}
+
+/// The entries of a context menu, swapped each render.
+type MenuCell = Rc<RefCell<Rc<Vec<MenuEntry>>>>;
+
+/// The state of an element's effects.
+#[derive(Default)]
+struct EffectState {
+    menu: Option<(MenuCell, Connection)>,
+    sheet: Option<Shown>,
+    popover: Option<Shown>,
+}
 
 /// A rendered element.
 pub(crate) struct Instance {
@@ -21,6 +57,7 @@ pub(crate) struct Instance {
     key: Option<Key>,
     slots: Option<Rc<Slots>>,
     child: Option<Box<Instance>>,
+    effects: EffectState,
 }
 
 impl Instance {
@@ -40,6 +77,9 @@ impl Instance {
     }
 
     fn dispose(self) {
+        if let Some((_, c)) = self.effects.menu {
+            c.disconnect();
+        }
         for (_, _, c) in self.handlers {
             c.disconnect();
         }
@@ -100,6 +140,7 @@ pub(crate) fn create(elem: Element, sched: &Weak<Scheduler>) -> Option<Instance>
             key: elem.key,
             slots: Some(slots),
             child: Some(Box::new(child)),
+            effects: EffectState::default(),
         });
     }
     let view = match &elem.what {
@@ -121,6 +162,8 @@ pub(crate) fn create(elem: Element, sched: &Weak<Scheduler>) -> Option<Instance>
     } else {
         reconcile_children(&view, Vec::new(), elem.children, sched)
     };
+    let mut effects = EffectState::default();
+    apply_effects(&view, &mut effects, &elem.effects, sched);
     Some(Instance {
         what: elem.what,
         view: Some(view),
@@ -130,7 +173,125 @@ pub(crate) fn create(elem: Element, sched: &Weak<Scheduler>) -> Option<Instance>
         key: elem.key,
         slots: None,
         child: None,
+        effects,
     })
+}
+
+/// Opens, updates or closes the element's sheet, popover and context menu.
+fn apply_effects(view: &KitView, state: &mut EffectState, want: &Effects, sched: &Weak<Scheduler>) {
+    let _ = sched;
+    // Context menu: one connection; the entries are swapped each render.
+    match (&want.menu, &mut state.menu) {
+        (Some(entries), Some((cell, _))) => *cell.borrow_mut() = entries.clone(),
+        (Some(entries), None) => {
+            let cell = Rc::new(RefCell::new(entries.clone()));
+            let c2 = cell.clone();
+            let conn = view.on(Signal::CONTEXT_MENU, move |v, value| {
+                let entries = c2.borrow().clone();
+                let Ok(mut menu) = vetro_kit::Menu::new("", None) else {
+                    return;
+                };
+                for (i, e) in entries.iter().enumerate() {
+                    let next = if e.separator {
+                        menu.separator()
+                    } else {
+                        let flags = if e.action.is_some() {
+                            0
+                        } else {
+                            vetro_kit::menu_flags::DISABLED
+                        };
+                        menu.item(&e.title, e.shortcut.as_deref(), (i + 1) as u32, flags)
+                    };
+                    match next {
+                        Ok(m) => menu = m,
+                        Err(_) => return,
+                    }
+                }
+                let frame = v.frame().unwrap_or_default();
+                let (x, y) = match value {
+                    vetro_kit::Value::Point(x, y) => (*x - frame.x, *y - frame.y),
+                    _ => (frame.width / 2.0, frame.height / 2.0),
+                };
+                let anchor = vetro_kit::Rect {
+                    x,
+                    y,
+                    width: 0.0,
+                    height: 0.0,
+                };
+                let _ = v.popup_menu(menu, anchor, false, 0, move |id| {
+                    if id == 0 {
+                        return;
+                    }
+                    let i = (id - 1) as usize;
+                    if let Some(a) = entries.get(i).and_then(|e| e.action.clone()) {
+                        a();
+                    }
+                });
+            });
+            if let Ok(c) = conn {
+                state.menu = Some((cell, c));
+            }
+        }
+        (None, slot) => {
+            if let Some((_, c)) = slot.take() {
+                c.disconnect();
+            }
+        }
+    }
+    present(view, &mut state.sheet, want.sheet.as_ref(), true);
+    present(view, &mut state.popover, want.popover.as_ref(), false);
+}
+
+fn present(view: &KitView, slot: &mut Option<Shown>, want: Option<&Presentation>, sheet: bool) {
+    let presented = want.is_some_and(|p| p.presented);
+    match (presented, slot.as_ref()) {
+        (true, Some(shown)) => {
+            if let Some(p) = want {
+                *shown.content.borrow_mut() = p.content.clone();
+            }
+        }
+        (true, None) => {
+            let Some(p) = want else { return };
+            let Some(parent) = view.window() else { return };
+            let window = if sheet {
+                vetro_kit::Window::sheet(parent, p.size.0, p.size.1)
+            } else {
+                let f = view.frame().unwrap_or_default();
+                vetro_kit::Window::popup(parent, f, p.size.0, p.size.1)
+            };
+            let Ok(window) = window else { return };
+            let Ok(host) = KitView::new(vetro_kit::Kind::VIEW) else {
+                return;
+            };
+            let _ = host.set_float(Prop::MAX_WIDTH, f64::INFINITY);
+            let _ = host.set_float(Prop::MAX_HEIGHT, f64::INFINITY);
+            let _ = window.set_content(&host);
+            let content = Rc::new(RefCell::new(p.content.clone()));
+            let c2 = content.clone();
+            let root = crate::mount(host, move || FnComponent(c2.borrow().clone()));
+            let dismissed = p.dismissed.clone();
+            let close = window.root().and_then(|r| {
+                let d = dismissed.clone();
+                r.on(Signal::CLOSED, move |_, _| {
+                    if let Some(d) = &d {
+                        d();
+                    }
+                })
+                .ok()
+            });
+            let _ = window.show();
+            *slot = Some(Shown {
+                window,
+                _root: root,
+                content,
+                _close: close,
+            });
+        }
+        (false, Some(_)) => {
+            *slot = None;
+        }
+        (false, None) => {}
+    }
 }
 
 /// Updates `old` to show `elem` (same kind, checked by the caller).
@@ -197,6 +358,8 @@ fn update(mut old: Instance, elem: Element, sched: &Weak<Scheduler>) -> Option<I
             sched,
         )
     };
+    let mut effects = std::mem::take(&mut old.effects);
+    apply_effects(&view, &mut effects, &elem.effects, sched);
     Some(Instance {
         what: elem.what,
         view: Some(view),
@@ -206,6 +369,7 @@ fn update(mut old: Instance, elem: Element, sched: &Weak<Scheduler>) -> Option<I
         key: elem.key,
         slots: None,
         child: None,
+        effects,
     })
 }
 

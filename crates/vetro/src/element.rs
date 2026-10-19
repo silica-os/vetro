@@ -128,6 +128,64 @@ pub(crate) enum What {
     Custom(TypeId, Rc<dyn Fn() -> Option<KitView>>),
 }
 
+/// A row of a context menu.
+#[derive(Clone)]
+pub struct MenuEntry {
+    /// Label.
+    pub title: String,
+    /// Key equivalent shown (`cmd+c` …).
+    pub shortcut: Option<String>,
+    /// What choosing it does (none: disabled).
+    pub action: Option<Rc<dyn Fn()>>,
+    /// A separator row.
+    pub separator: bool,
+}
+
+impl MenuEntry {
+    /// An item.
+    pub fn item(title: &str, action: impl Fn() + 'static) -> Self {
+        MenuEntry {
+            title: title.to_string(),
+            shortcut: None,
+            action: Some(Rc::new(action)),
+            separator: false,
+        }
+    }
+
+    /// A separator.
+    pub fn separator() -> Self {
+        MenuEntry {
+            title: String::new(),
+            shortcut: None,
+            action: None,
+            separator: true,
+        }
+    }
+
+    /// With a key equivalent shown.
+    pub fn shortcut(mut self, s: &str) -> Self {
+        self.shortcut = Some(s.to_string());
+        self
+    }
+}
+
+/// A window presented from a view (sheet or popover).
+#[derive(Clone)]
+pub(crate) struct Presentation {
+    pub(crate) presented: bool,
+    pub(crate) size: (f32, f32),
+    pub(crate) content: Rc<dyn Fn() -> Element>,
+    pub(crate) dismissed: Option<Rc<dyn Fn()>>,
+}
+
+/// Side effects of an element beyond its view.
+#[derive(Clone, Default)]
+pub(crate) struct Effects {
+    pub(crate) menu: Option<Rc<Vec<MenuEntry>>>,
+    pub(crate) sheet: Option<Presentation>,
+    pub(crate) popover: Option<Presentation>,
+}
+
 /// An element: a view to make, its properties, handlers and children.
 #[derive(Clone)]
 pub struct Element {
@@ -136,6 +194,7 @@ pub struct Element {
     pub(crate) handlers: Vec<(Signal, Handler)>,
     pub(crate) children: Vec<Element>,
     pub(crate) key: Option<Key>,
+    pub(crate) effects: Effects,
 }
 
 impl std::fmt::Debug for Element {
@@ -163,6 +222,7 @@ impl Element {
             handlers: Vec::new(),
             children: Vec::new(),
             key: None,
+            effects: Effects::default(),
         }
     }
 
@@ -379,6 +439,48 @@ impl Element {
         self.prop(Prop::TRANSITION, PValue::Int(t as i64))
     }
 
+    /// A context menu (secondary click or the accessibility action).
+    pub fn context_menu(mut self, entries: Vec<MenuEntry>) -> Self {
+        self.effects.menu = Some(Rc::new(entries));
+        self
+    }
+
+    /// Presents `content` in a sheet attached to this view's window while `presented` is
+    /// true; when the user closes it, `presented` is set to false.
+    pub fn sheet(
+        mut self,
+        presented: &crate::Binding<bool>,
+        size: (f32, f32),
+        content: impl Fn() -> Element + 'static,
+    ) -> Self {
+        let b = presented.clone();
+        self.effects.sheet = Some(Presentation {
+            presented: presented.get(),
+            size,
+            content: Rc::new(content),
+            dismissed: Some(Rc::new(move || b.set(false))),
+        });
+        self
+    }
+
+    /// Presents `content` in a popover anchored to this view while `presented` is true;
+    /// dismissing it (a click outside) sets `presented` to false.
+    pub fn popover(
+        mut self,
+        presented: &crate::Binding<bool>,
+        size: (f32, f32),
+        content: impl Fn() -> Element + 'static,
+    ) -> Self {
+        let b = presented.clone();
+        self.effects.popover = Some(Presentation {
+            presented: presented.get(),
+            size,
+            content: Rc::new(content),
+            dismissed: Some(Rc::new(move || b.set(false))),
+        });
+        self
+    }
+
     /// Adds children.
     pub fn children(mut self, children: impl IntoChildren) -> Self {
         self.children.extend(children.into_children());
@@ -547,6 +649,7 @@ pub fn component(c: impl Component) -> Element {
         handlers: Vec::new(),
         children: Vec::new(),
         key: None,
+        effects: Effects::default(),
     }
 }
 
@@ -558,6 +661,7 @@ pub fn host(view: KitView) -> Element {
         handlers: Vec::new(),
         children: Vec::new(),
         key: None,
+        effects: Effects::default(),
     }
 }
 
@@ -573,6 +677,7 @@ pub fn custom<T: vetro_kit::Custom>(make: impl Fn() -> T + 'static) -> Element {
         handlers: Vec::new(),
         children: Vec::new(),
         key: None,
+        effects: Effects::default(),
     }
 }
 

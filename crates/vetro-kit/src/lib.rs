@@ -606,6 +606,13 @@ impl View {
         check(unsafe { f::vetro_view_perform(self.as_ptr(), action) })
     }
 
+    /// The window the view is shown in.
+    pub fn window(&self) -> Option<Window> {
+        // SAFETY: a handle.
+        let p = unsafe { f::vetro_view_window(self.as_ptr()) };
+        NonNull::new(p).map(|ptr| Window { ptr })
+    }
+
     /// Clicks it (the accessibility action).
     pub fn click(&self) -> Result<()> {
         self.perform(sys::VETRO_ACTION_CLICK)
@@ -932,6 +939,12 @@ impl Window {
         Window::from(unsafe {
             f::vetro_window_new_popup(parent.ptr.as_ptr(), anchor, width, height)
         })
+    }
+
+    /// A sheet attached to `parent`.
+    pub fn sheet(parent: Window, width: f32, height: f32) -> Result<Window> {
+        // SAFETY: a handle and plain values.
+        Window::from(unsafe { f::vetro_window_new_sheet(parent.ptr.as_ptr(), width, height) })
     }
 
     /// A shell surface.
