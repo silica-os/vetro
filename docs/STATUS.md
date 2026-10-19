@@ -264,9 +264,13 @@ first, Escape last).
    replies; the Flutter shell's Dock tests ported. Platform fixes found in the VM: the seat
    present at startup is adopted (popups now grab and close on a press outside; the data
    device and text input exist), unchanged input regions are not sent again.
+   The shell runs as one process per role (`silica-shell --role`: wallpaper, menubar,
+   controlcenter, dock, faro, notifications, lock, screenshot; silica-desktop#261), each
+   kept running by Ossido; the lock role takes the lock over after a restart. Memory in the
+   VM: about 112 MB PSS for the eight processes (the wallpaper role 39 MB, its Vulkan
+   swapchain at the output's size; the idle roles about 8 MB each).
    Next: the screenshot editor stays an app (#154, not in the shell); recording (#153);
-   Notification Center widgets need a kit design first; one process per shell role
-   (silica-desktop#261).
+   Notification Center widgets need a kit design first.
 2. Performance: a real Skia persistent shader cache needs a skia-safe binding.
 3. Collections: type-select, column reordering, drag and drop of rows, rubber-band
    selection in grids.
