@@ -88,3 +88,9 @@ test that names it, until the kit is fixed.
 - `Gatekeeper/Confirm`: Sketch fits the title in 240 pt where its text is 240.85 wide (3 lines
   instead of 4); the test gives the text column 241 pt. Its message is `Text/Tertiary` where the
   other alerts use secondary.
+
+## Dialogs
+
+- Buttons wider than their text (72 pt minimum) keep the master label's place in the kit's
+  resized nested instances: the labels' frames are not compared.
+- The panels' rows and sections are the Forms masters with their quirks (see Forms).
