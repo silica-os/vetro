@@ -168,6 +168,7 @@ pub struct Ui {
     /// Whether the platform serves the clipboard (headless: an in-process one).
     pub has_platform_clipboard: bool,
     flushing: bool,
+    state_check: Vec<ViewId>,
     /// Global keyboard shortcuts of the app (menu key equivalents): shortcut → handler.
     shortcuts: Vec<(crate::core::event::Shortcut, ShortcutHandler)>,
 }
@@ -197,6 +198,7 @@ impl Ui {
             clipboard: None,
             has_platform_clipboard: false,
             flushing: false,
+            state_check: Vec::new(),
             shortcuts: Vec::new(),
         }
     }
@@ -589,6 +591,9 @@ impl Ui {
 
     /// Records the view's drawing again at the next frame.
     pub fn request_paint(&mut self, id: ViewId) {
+        if !self.state_check.contains(&id) {
+            self.state_check.push(id);
+        }
         let window = match self.tree.get_mut(id) {
             Some(n) => {
                 n.flags.insert(NodeFlags::NEEDS_PAINT);
@@ -605,6 +610,9 @@ impl Ui {
         for v in self.tree.descendants(id) {
             if let Some(n) = self.tree.get_mut(v) {
                 n.flags.insert(NodeFlags::NEEDS_PAINT);
+            }
+            if !self.state_check.contains(&v) {
+                self.state_check.push(v);
             }
         }
         if let Some(w) = self.window_of(id) {
@@ -683,6 +691,7 @@ impl Ui {
             return;
         }
         self.flushing = true;
+        self.notify_states();
         let mut budget = 10_000;
         while let Some((id, signal, value)) = self.signals.pop_front() {
             budget -= 1;
@@ -708,6 +717,35 @@ impl Ui {
             }
         }
         self.flushing = false;
+    }
+
+    /// Tells widgets whose interaction flags changed.
+    fn notify_states(&mut self) {
+        let mut rounds = 0;
+        while !self.state_check.is_empty() && rounds < 8 {
+            rounds += 1;
+            for id in std::mem::take(&mut self.state_check) {
+                let Some(n) = self.tree.get(id) else { continue };
+                let mut now = n.flags & NodeFlags::INTERACTION;
+                if self.is_disabled(id) {
+                    now |= NodeFlags::DISABLED;
+                }
+                let old = n.seen_flags;
+                if old == now {
+                    continue;
+                }
+                if let Some(n) = self.tree.get_mut(id) {
+                    n.seen_flags = now;
+                }
+                if let Some(mut w) = self.tree.take_widget(id) {
+                    {
+                        let mut cx = EventCx { ui: self, id };
+                        w.state_changed(&mut cx, old, now);
+                    }
+                    self.tree.put_widget(id, w);
+                }
+            }
+        }
     }
 
     // ----- Requests -----------------------------------------------------------------------
@@ -1725,6 +1763,7 @@ impl Ui {
     /// Records the drawing of every view that needs it, and returns the window's damage
     /// (window coordinates): the old and new painted bounds of every view that changed.
     pub fn prepare_frame(&mut self, window: WindowId) -> Rect {
+        self.flush();
         self.layout_window(window);
         let Some(root) = self.window(window).map(|w| w.root) else {
             return Rect::ZERO;

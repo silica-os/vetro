@@ -18,6 +18,7 @@ serde_json = "1"
 skia-safe.workspace = true
 tracing = "0.1"
 bitflags = "2"
+unicode-segmentation = "1"
 
 [lints]
 workspace = true

@@ -66,6 +66,15 @@ bitflags::bitflags! {
     }
 }
 
+impl NodeFlags {
+    /// The flags a widget is told about when they change.
+    pub const INTERACTION: NodeFlags = NodeFlags::HOVERED
+        .union(NodeFlags::PRESSED)
+        .union(NodeFlags::FOCUSED)
+        .union(NodeFlags::FOCUS_VISIBLE)
+        .union(NodeFlags::DISABLED);
+}
+
 /// Generic layout and appearance modifiers every view has (SwiftUI-style), applied by the
 /// core around the widget's own layout.
 #[derive(Debug, Clone, PartialEq)]
@@ -167,6 +176,8 @@ pub struct Node {
     pub display_over: DisplayList,
     /// The bounds painted last time, in window coordinates (for damage).
     pub painted_bounds: Rect,
+    /// The interaction flags the widget was last told about ([`Widget::state_changed`]).
+    pub seen_flags: NodeFlags,
 }
 
 impl Node {
@@ -188,6 +199,7 @@ impl Node {
             display: DisplayList::default(),
             display_over: DisplayList::default(),
             painted_bounds: Rect::ZERO,
+            seen_flags: NodeFlags::empty(),
         }
     }
 

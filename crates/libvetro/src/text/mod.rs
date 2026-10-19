@@ -1,5 +1,6 @@
 //! Text: fonts, shaping and layout (SkParagraph), attributed strings, the editing engine.
 
+pub mod edit;
 pub mod fonts;
 pub mod layout;
 

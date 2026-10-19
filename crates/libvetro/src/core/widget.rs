@@ -109,6 +109,10 @@ pub trait Widget: AsAny {
         Handled::No
     }
 
+    /// The interaction state changed (hover, press, focus, disabled): start the
+    /// transitions. Called after the event that caused it.
+    fn state_changed(&mut self, _cx: &mut EventCx<'_>, _old: NodeFlags, _new: NodeFlags) {}
+
     /// Built-in interaction.
     fn interaction(&self) -> Interaction {
         Interaction::None
