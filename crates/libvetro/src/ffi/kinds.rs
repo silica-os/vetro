@@ -75,3 +75,37 @@ pub fn make(kind: u32) -> Option<Box<dyn Widget>> {
         _ => return None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::a11y::{A11y, Role};
+
+    #[test]
+    fn every_control_describes_itself() {
+        let containers = [
+            VETRO_KIND_VIEW,
+            VETRO_KIND_ROW,
+            VETRO_KIND_COLUMN,
+            VETRO_KIND_OVERLAY,
+            VETRO_KIND_GRID,
+            VETRO_KIND_SPACER,
+            VETRO_KIND_SYMBOL,
+            VETRO_KIND_SCROLL_VIEW,
+            VETRO_KIND_GROUP_BOX,
+        ];
+        let mut missing = Vec::new();
+        for (name, kind) in vetro_sys::KINDS {
+            let Some(w) = make(*kind) else {
+                missing.push(format!("{name}: no widget"));
+                continue;
+            };
+            let mut a = A11y::default();
+            w.accessibility(&mut a);
+            if a.role == Role::Group && !containers.contains(kind) {
+                missing.push(format!("{name}: no role"));
+            }
+        }
+        assert!(missing.is_empty(), "{missing:?}");
+    }
+}
