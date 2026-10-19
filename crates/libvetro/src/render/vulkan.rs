@@ -9,8 +9,11 @@
 //! batch waits on before Skia's work is submitted (a wait covers the commands submitted
 //! after it), and an empty batch after Skia's submits signals the render-done semaphore
 //! (a signal covers the commands submitted before it) and the slot's fence. The present
-//! waits on render-done; the CPU waits only for the slot's previous frame. Every frame
-//! repaints the whole image (swapchain images do not keep their contents).
+//! waits on render-done; the CPU waits only for the slot's previous frame.
+//!
+//! Partial repaints: swapchain images do not reliably keep their contents (Venus, other
+//! drivers), so each window keeps a back surface on the GPU that only the damaged region is
+//! repainted into; the whole back surface is then copied onto the acquired image.
 
 #![allow(unsafe_code)]
 
@@ -66,6 +69,9 @@ pub struct VkWindow {
     extent: (i32, i32),
     slots: Vec<Slot>,
     next: usize,
+    /// The retained frame: the damaged region is repainted into it, then it is copied to
+    /// the swapchain image.
+    back: Option<skia_safe::Surface>,
 }
 
 fn err(call: &str) -> impl Fn(vk::Result) -> String + '_ {
@@ -178,6 +184,85 @@ impl VkContext {
     }
 
     /// The GPU's name.
+    /// Compiles the pipelines a typical frame needs (rounded rectangles with antialiasing,
+    /// strokes, gradients, images, text, layers with opacity, rounded clips) by drawing them
+    /// once offscreen, after the first frame: skia-safe has no binding for Skia's persistent
+    /// shader cache, so the first menu or popup would otherwise compile them mid-animation.
+    pub fn warm_up(&mut self) {
+        let ii = skia_safe::ImageInfo::new_n32_premul((96, 96), None);
+        let Some(mut surface) = gpu::surfaces::render_target(
+            &mut self.skia,
+            gpu::Budgeted::Yes,
+            &ii,
+            None,
+            SurfaceOrigin::TopLeft,
+            None,
+            false,
+            None,
+        ) else {
+            return;
+        };
+        let canvas = surface.canvas();
+        canvas.clear(skia_safe::Color::TRANSPARENT);
+        let mut p = skia_safe::Paint::default();
+        p.set_anti_alias(true);
+        p.set_color(skia_safe::Color::from_argb(200, 30, 120, 220));
+        let r = skia_safe::Rect::from_xywh(4.0, 4.0, 60.0, 30.0);
+        canvas.draw_rrect(skia_safe::RRect::new_rect_xy(r, 8.0, 8.0), &p);
+        canvas.draw_circle((70.0, 20.0), 10.0, &p);
+        p.set_style(skia_safe::paint::Style::Stroke);
+        p.set_stroke_width(1.5);
+        canvas.draw_rrect(skia_safe::RRect::new_rect_xy(r, 8.0, 8.0), &p);
+        p.set_style(skia_safe::paint::Style::Fill);
+        {
+            use skia_safe::gradient::{Colors, Gradient, Interpolation, shaders};
+            let colors = [
+                skia_safe::Color4f::from(skia_safe::Color::WHITE),
+                skia_safe::Color4f::from(skia_safe::Color::BLACK),
+            ];
+            let gradient = Gradient::new(
+                Colors::new(&colors, None, skia_safe::TileMode::Clamp, None),
+                Interpolation::default(),
+            );
+            if let Some(shader) =
+                shaders::linear_gradient(((0.0, 0.0), (0.0, 96.0)), &gradient, None)
+            {
+                p.set_shader(shader);
+                canvas.draw_rect(skia_safe::Rect::from_xywh(0.0, 40.0, 40.0, 20.0), &p);
+                p.set_shader(None);
+            }
+        }
+        canvas.save();
+        canvas.clip_rrect(
+            skia_safe::RRect::new_rect_xy(
+                skia_safe::Rect::from_xywh(40.0, 40.0, 50.0, 50.0),
+                12.0,
+                12.0,
+            ),
+            skia_safe::ClipOp::Intersect,
+            true,
+        );
+        canvas.save_layer_alpha_f(None, 0.5);
+        canvas.draw_paint(&p);
+        canvas.restore();
+        canvas.restore();
+        let snapshot = surface.image_snapshot();
+        let canvas = surface.canvas();
+        canvas.draw_image_rect_with_sampling_options(
+            &snapshot,
+            None,
+            skia_safe::Rect::from_xywh(10.0, 60.0, 30.0, 30.0),
+            skia_safe::SamplingOptions::new(
+                skia_safe::FilterMode::Linear,
+                skia_safe::MipmapMode::None,
+            ),
+            &p,
+        );
+        let font = skia_safe::Font::default();
+        canvas.draw_str("Aa", (10.0, 90.0), &font, &p);
+        self.skia.flush_and_submit();
+    }
+
     pub fn renderer(&self) -> &str {
         &self.name
     }
@@ -259,6 +344,7 @@ impl VkContext {
             extent: (0, 0),
             slots,
             next: 0,
+            back: None,
         })
     }
 
@@ -387,16 +473,20 @@ impl VkContext {
         Ok(())
     }
 
-    /// Draws and presents a frame of `size` device pixels. The caller has requested the frame
-    /// callback (the present commits the surface).
+    /// Draws and presents a frame of `size` device pixels: `draw` gets the back surface's
+    /// canvas and the region to repaint (`damage`, device pixels; `None` = everything, as
+    /// after a resize). The caller has requested the frame callback (the present commits the
+    /// surface).
     pub fn render(
         &mut self,
         w: &mut VkWindow,
         size: (i32, i32),
-        draw: impl FnOnce(&skia_safe::Canvas),
+        damage: crate::geom::Rect,
+        draw: impl FnOnce(&skia_safe::Canvas, Option<crate::geom::Rect>),
     ) -> Result<(), String> {
         if w.swapchain == vk::SwapchainKHR::null() || w.extent != size {
             self.rebuild(w, size)?;
+            w.back = None;
         }
         let slot_index = w.next % w.slots.len().max(1);
         let Some(slot) = w.slots.get(slot_index).copied() else {
@@ -457,6 +547,26 @@ impl VkContext {
                 None,
             )
         };
+        // The retained frame: repaint the damage only.
+        let full = w.back.is_none();
+        if w.back.is_none() {
+            let ii = skia_safe::ImageInfo::new(
+                w.extent,
+                w.color_type,
+                skia_safe::AlphaType::Premul,
+                None,
+            );
+            w.back = gpu::surfaces::render_target(
+                &mut self.skia,
+                gpu::Budgeted::Yes,
+                &ii,
+                None,
+                SurfaceOrigin::TopLeft,
+                None,
+                false,
+                None,
+            );
+        }
         let target = gpu::backend_render_targets::make_vk(w.extent, &info);
         let mut surface = gpu::surfaces::wrap_backend_render_target(
             &mut self.skia,
@@ -467,7 +577,22 @@ impl VkContext {
             None,
         )
         .ok_or("Skia: cannot wrap the swapchain image")?;
-        draw(surface.canvas());
+        match w.back.as_mut() {
+            Some(back) => {
+                let repaint = (!full && !damage.is_empty()).then_some(damage);
+                draw(back.canvas(), repaint);
+                let mut copy = skia_safe::Paint::default();
+                copy.set_blend_mode(skia_safe::BlendMode::Src);
+                back.draw(
+                    surface.canvas(),
+                    (0, 0),
+                    skia_safe::SamplingOptions::default(),
+                    Some(&copy),
+                );
+            }
+            // No offscreen surface: the whole frame straight onto the image.
+            None => draw(surface.canvas(), None),
+        }
         self.skia.flush_surface_with_access(
             &mut surface,
             skia_safe::surface::BackendSurfaceAccess::Present,

@@ -1183,6 +1183,10 @@ impl Platform {
         self.render_frame(id);
         if !self.first_frame_done {
             self.first_frame_done = true;
+            // The pipelines of later frames compile now, not in the first animation.
+            if let Some(vk) = self.vk.as_mut() {
+                vk.warm_up();
+            }
             // Cold start (#254 budget: 150 ms), from entering the app loop to the first
             // frame presented.
             let ms = RUN_START
@@ -1212,7 +1216,7 @@ impl Platform {
             self.ui.advance(dt.min(0.1));
         }
         let damage = self.ui.prepare_frame(id);
-        if self.renderer == Renderer::Vulkan && self.render_vk(id) {
+        if self.renderer == Renderer::Vulkan && self.render_vk(id, damage) {
             return;
         }
         if self.renderer == Renderer::Gl && self.render_gl(id, damage) {
@@ -1287,7 +1291,7 @@ impl Platform {
     }
 
     /// Renders with Vulkan; false when Vulkan is unavailable (the caller falls back to GL).
-    fn render_vk(&mut self, id: WindowId) -> bool {
+    fn render_vk(&mut self, id: WindowId, damage: Rect) -> bool {
         let Some(wl) = self.surface(id).map(|s| s.role.wl_surface().clone()) else {
             return false;
         };
@@ -1343,11 +1347,27 @@ impl Platform {
             return false;
         };
         let ui = &self.ui;
-        let result = ctx.render(w, px, |canvas| {
-            canvas.clear(skia_safe::Color::TRANSPARENT);
+        let device_damage = if damage.is_empty() {
+            Rect::ZERO
+        } else {
+            Rect::new(
+                damage.x * scale,
+                damage.y * scale,
+                damage.width * scale,
+                damage.height * scale,
+            )
+            .round_out(1.0)
+        };
+        let result = ctx.render(w, px, device_damage, |canvas, repaint| {
             canvas.save();
+            let logical_clip = repaint.map(|r| {
+                canvas.clip_rect(r.to_sk(), skia_safe::ClipOp::Intersect, false);
+                Rect::new(r.x / scale, r.y / scale, r.width / scale, r.height / scale)
+                    .round_out(scale)
+            });
+            canvas.clear(skia_safe::Color::TRANSPARENT);
             canvas.scale((scale, scale));
-            ui.paint_window(id, canvas, None);
+            ui.paint_window(id, canvas, logical_clip);
             canvas.restore();
         });
         if let Err(e) = result {
