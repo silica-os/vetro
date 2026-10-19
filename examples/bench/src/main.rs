@@ -62,6 +62,65 @@ fn main() {
     if hover > Duration::from_millis(8) {
         failures.push("hover over 8 ms");
     }
+    // An animation beside 500 static controls (a spinner over a busy window), drawn at 2×:
+    // the frame (layout, recording, raster painting) must fit 120 Hz, 8.3 ms. The raster
+    // cache draws the static controls from an image.
+    for cache in [false, true] {
+        let mut ui = Ui::new_headless();
+        ui.set_raster_cache(cache);
+        let win = ui.create_window(WindowKind::Normal, Size::new(1600.0, 1000.0));
+        let col = ui.create(vetro_lib::core::Stack::column(8.0));
+        let grid = ui.create(Grid {
+            columns: 20,
+            column_spacing: 8.0,
+            row_spacing: 8.0,
+            alignment: Alignment::TOP_LEADING,
+        });
+        for i in 0..500 {
+            let v = if i % 2 == 0 {
+                ui.create(PushButton::new("Button").variant(PushVariant::Secondary))
+            } else {
+                ui.create(Toggle::checkbox().label("Check"))
+            };
+            ui.add_child(grid, v);
+        }
+        let spin = ui.create(vetro_lib::amalfi::progress::Spinner::new());
+        ui.add_child(col, spin);
+        ui.add_child(col, grid);
+        ui.set_content(win, col);
+        ui.show_window(win);
+        let Some(mut surface) = skia_safe::surfaces::raster_n32_premul((3200, 2000)) else {
+            return;
+        };
+        let mut worst = Duration::ZERO;
+        let mut total = Duration::ZERO;
+        let frames = 60;
+        for f in 0..frames + 5 {
+            let t = Instant::now();
+            ui.advance(1.0 / 120.0);
+            let _ = ui.prepare_frame(win);
+            let canvas = surface.canvas();
+            canvas.save();
+            canvas.scale((2.0, 2.0));
+            ui.paint_window(win, canvas, None);
+            canvas.restore();
+            let dt = t.elapsed();
+            // The first frames record everything and make the images.
+            if f >= 5 {
+                worst = worst.max(dt);
+                total += dt;
+            }
+        }
+        let label = if cache { "on" } else { "off" };
+        println!(
+            "animation beside 500 controls at 2×, raster cache {label}: {:?} per frame, worst {worst:?}, cache {} KB",
+            total / frames,
+            ui.raster_cache_bytes() / 1024
+        );
+        if cache && worst > Duration::from_micros(8333) {
+            failures.push("animated frame over 8.3 ms (120 Hz)");
+        }
+    }
     let _ = Event::Activate;
     let _ = Point::ZERO;
     // Typing in a 10 MB document.

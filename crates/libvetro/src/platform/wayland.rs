@@ -508,6 +508,10 @@ pub fn run_with(
     platform.a11y = Some(crate::platform::a11y::Accessibility::new(ping));
     stage("accessibility");
     platform.app_id = app_id.to_string();
+    // Static subtrees from images (`VETRO_RASTER_CACHE=0` turns it off).
+    platform
+        .ui
+        .set_raster_cache(std::env::var_os("VETRO_RASTER_CACHE").is_none_or(|v| v != "0"));
     platform
         .ui
         .set_state_dir(crate::core::restore::state_dir(app_id));

@@ -232,6 +232,12 @@ pub struct Ui {
     pub(crate) tooltips: crate::amalfi::tooltips::Presenter,
     /// Where autosaved window states are kept (`core::restore`).
     pub(crate) state_dir: Option<std::path::PathBuf>,
+    /// Frames prepared (the raster caches count stable frames with it).
+    frame_counter: u64,
+    /// Static subtrees are drawn from images (`core::raster`).
+    raster_cache: bool,
+    /// Bytes taken by those images.
+    raster_bytes: std::cell::Cell<usize>,
 }
 
 impl Default for Ui {
@@ -269,6 +275,9 @@ impl Ui {
             app_handler: None,
             tooltips: crate::amalfi::tooltips::Presenter::default(),
             state_dir: None,
+            frame_counter: 0,
+            raster_cache: false,
+            raster_bytes: std::cell::Cell::new(0),
         }
     }
 
@@ -2042,6 +2051,7 @@ impl Ui {
         };
         let mut damage = self.window(window).map(|w| w.damage).unwrap_or_default();
         let theme_root = self.theme_of(root);
+        self.frame_counter += 1;
         self.record_subtree(root, Point::ZERO, theme_root, &mut damage);
         let size = self.window(window).map(|w| w.size).unwrap_or_default();
         let damage = damage.intersect(Rect::from_size(size));
@@ -2052,16 +2062,27 @@ impl Ui {
         damage
     }
 
+    /// Records what needs it under `id`, adds what changed to `damage`, and keeps the raster
+    /// state of the subtree; returns whether anything in it changed (its drawing, layout or
+    /// placement) since the last frame.
     fn record_subtree(
         &mut self,
         id: ViewId,
         parent_origin: Point,
         parent_theme: Theme,
         damage: &mut Rect,
-    ) {
-        let Some(n) = self.tree.get(id) else { return };
+    ) -> bool {
+        use crate::core::raster::{hash_f32s, hash_of, list_cacheable};
+        use std::hash::Hash;
+        let Some(n) = self.tree.get(id) else {
+            return false;
+        };
         if n.flags.contains(NodeFlags::HIDDEN) {
-            return;
+            let was = n.raster.placement != 0;
+            if let Some(n) = self.tree.get_mut(id) {
+                n.raster.placement = 0;
+            }
+            return was;
         }
         let origin = parent_origin + n.frame.origin() + n.modifiers.offset;
         let mut theme = match n.dark_override {
@@ -2084,7 +2105,9 @@ impl Ui {
         if needs_paint {
             self.record_view(id, theme);
         }
-        let Some(n) = self.tree.get(id) else { return };
+        let Some(n) = self.tree.get(id) else {
+            return true;
+        };
         let local = n.display.bounds().union(n.display_over.bounds()).union(
             if n.modifiers.background.is_some() {
                 Rect::from_size(n.frame.size())
@@ -2093,7 +2116,7 @@ impl Ui {
             },
         );
         let s = n.modifiers.scale;
-        let local = if (s - 1.0).abs() > 1e-6 {
+        let scaled = if (s - 1.0).abs() > 1e-6 {
             let c = Point::new(n.frame.width / 2.0, n.frame.height / 2.0);
             Transform::translate(-c.x, -c.y)
                 .then(Transform::scale(s, s))
@@ -2102,17 +2125,93 @@ impl Ui {
         } else {
             local
         };
-        let now_bounds = local.translate(origin);
+        let now_bounds = scaled.translate(origin);
         let old = n.painted_bounds;
         if needs_paint || old != now_bounds {
             *damage = damage.union(old).union(now_bounds);
         }
+        // The view's placement: where and how its content goes (not part of its own image).
+        let anim = n
+            .anim
+            .as_ref()
+            .map(|a| (a.offset.get(), a.opacity.get(), a.scale.get()));
+        let placement = hash_of(|h| {
+            1u8.hash(h);
+            hash_f32s(
+                h,
+                &[
+                    n.frame.x,
+                    n.frame.y,
+                    n.modifiers.offset.x,
+                    n.modifiers.offset.y,
+                    n.modifiers.opacity,
+                    n.modifiers.scale,
+                ],
+            );
+            if let Some((o, op, sc)) = anim {
+                hash_f32s(h, &[o.x, o.y, op, sc]);
+            }
+            (n.flags & (NodeFlags::DISABLED | NodeFlags::CLIPS))
+                .bits()
+                .hash(h);
+        });
+        let children_sig = hash_of(|h| {
+            for c in &n.children {
+                c.hash(h);
+            }
+            hash_f32s(
+                h,
+                &[n.frame.width, n.frame.height, n.modifiers.corner_radius],
+            );
+        });
+        let own_items = (n.display.items.len() + n.display_over.items.len()) as u32;
+        let own_cacheable = list_cacheable(&n.display) && list_cacheable(&n.display_over);
+        let mut content_changed = needs_paint
+            || n.raster.own != local
+            || n.raster.children != children_sig
+            || n.modifiers.background.is_some() && n.raster.own != local;
+        let placement_changed = n.raster.placement != placement;
         if let Some(n) = self.tree.get_mut(id) {
             n.painted_bounds = now_bounds;
         }
+        let mut items = own_items;
+        let mut cacheable = own_cacheable;
+        let mut bounds = local;
         for c in self.tree.children(id).to_vec() {
-            self.record_subtree(c, origin, theme, damage);
+            if self.record_subtree(c, origin, theme, damage) {
+                content_changed = true;
+            }
+            if let Some(cn) = self.tree.get(c)
+                && !cn.flags.contains(NodeFlags::HIDDEN)
+            {
+                items += cn.raster.items;
+                cacheable &= cn.raster.cacheable && cn.anim.is_none();
+                let at = cn.frame.origin() + cn.modifiers.offset;
+                bounds = bounds.union(cn.raster.bounds.translate(at));
+            }
         }
+        let frame = self.frame_counter;
+        let mut freed = 0;
+        if let Some(n) = self.tree.get_mut(id) {
+            let st = &mut n.raster;
+            st.own = local;
+            st.children = children_sig;
+            st.placement = placement;
+            st.items = items;
+            st.cacheable = cacheable;
+            st.bounds = bounds;
+            if content_changed {
+                st.changed_at = frame;
+                if let Some(old) = st.image.get_mut().take() {
+                    freed = old.bytes();
+                }
+            }
+        }
+        if freed > 0 {
+            self.raster_bytes
+                .set(self.raster_bytes.get().saturating_sub(freed));
+        }
+        content_changed || placement_changed
     }
 
     fn record_view(&mut self, id: ViewId, theme: Theme) {
@@ -2205,6 +2304,32 @@ impl Ui {
             canvas.save_layer_alpha(None, (alpha.clamp(0.0, 1.0) * 255.0).round() as u32);
         }
         let size = n.frame.size();
+        if self.raster_cache && self.draw_cached(id, canvas, opts, dimmed || dim_here) {
+            if layered {
+                canvas.restore();
+            }
+            canvas.restore();
+            return;
+        }
+        self.paint_content(id, canvas, opts, dimmed || dim_here, size);
+        if layered {
+            canvas.restore();
+        }
+        canvas.restore();
+    }
+
+    /// Paints a view's content in its own coordinates: its background, drawing, children
+    /// (clipped when it clips) and the drawing over them.
+    fn paint_content(
+        &self,
+        id: ViewId,
+        canvas: &Canvas,
+        opts: PaintOptions,
+        dimmed: bool,
+        size: Size,
+    ) {
+        let Some(n) = self.tree.get(id) else { return };
+        let m = &n.modifiers;
         if let Some(bg) = m.background {
             let shape = if m.corner_radius > 0.0 {
                 Shape::rounded(m.corner_radius)
@@ -2235,16 +2360,90 @@ impl Ui {
             }
         }
         for c in &n.children {
-            self.paint_view(*c, canvas, opts, dimmed || dim_here);
+            self.paint_view(*c, canvas, opts, dimmed);
         }
         if clips {
             canvas.restore();
         }
         n.display_over.paint(canvas, opts);
-        if layered {
-            canvas.restore();
+    }
+
+    /// Draws a view's content from its raster cache, making the image when the subtree
+    /// has been still long enough; returns whether it drew.
+    fn draw_cached(&self, id: ViewId, canvas: &Canvas, opts: PaintOptions, dimmed: bool) -> bool {
+        use crate::core::raster;
+        let Some(n) = self.tree.get(id) else {
+            return false;
+        };
+        let st = &n.raster;
+        // A window's root changes with anything in the window: never worth an image.
+        if !st.cacheable
+            || n.flags.contains(NodeFlags::ROOT)
+            || st.items < raster::MIN_ITEMS
+            || self.frame_counter.saturating_sub(st.changed_at) < raster::STABLE_FRAMES
+        {
+            return false;
         }
-        canvas.restore();
+        let Some(scale) = raster::aligned_scale(canvas, st.bounds) else {
+            return false;
+        };
+        {
+            let cached = st.image.borrow();
+            if let Some(c) = cached.as_ref()
+                && c.made_at == st.changed_at
+                && (c.scale - scale).abs() < 1e-4
+                && c.bounds == st.bounds
+                && c.dimmed == dimmed
+            {
+                raster::blit(canvas, c);
+                return true;
+            }
+        }
+        let w = (st.bounds.width * scale).ceil().max(0.0) as usize;
+        let h = (st.bounds.height * scale).ceil().max(0.0) as usize;
+        let old = st.image.borrow().as_ref().map_or(0, raster::Cached::bytes);
+        let used = self.raster_bytes.get().saturating_sub(old);
+        if used + w * h * 4 > raster::BUDGET {
+            return false;
+        }
+        let size = n.frame.size();
+        let Some(image) = raster::draw_image(canvas, st.bounds, scale, |c| {
+            self.paint_content(id, c, opts, dimmed, size)
+        }) else {
+            return false;
+        };
+        let cached = raster::Cached {
+            image,
+            scale,
+            bounds: st.bounds,
+            made_at: st.changed_at,
+            dimmed,
+        };
+        self.raster_bytes.set(used + cached.bytes());
+        raster::blit(canvas, &cached);
+        *st.image.borrow_mut() = Some(cached);
+        true
+    }
+
+    /// Draws static subtrees from images (`core::raster`; the platform turns it on).
+    pub fn set_raster_cache(&mut self, on: bool) {
+        self.raster_cache = on;
+        if !on {
+            let roots: Vec<ViewId> = self.windows.iter().map(|w| w.root).collect();
+            for r in roots {
+                for id in self.tree.descendants(r) {
+                    if let Some(n) = self.tree.get(id) {
+                        n.raster.image.borrow_mut().take();
+                    }
+                }
+            }
+            self.raster_bytes.set(0);
+        }
+    }
+
+    /// Bytes taken by raster cache images.
+    pub fn raster_cache_bytes(&self) -> usize {
+        self.raster_bytes.get()
     }
 
     /// Renders a window into a raster image at `scale` device pixels per point (tests,

@@ -197,6 +197,8 @@ pub struct Node {
     pub seen_flags: NodeFlags,
     /// Implicit animation state.
     pub anim: Option<Box<crate::core::anim::NodeAnim>>,
+    /// What the frame knows about the subtree, and its raster cache.
+    pub raster: crate::core::raster::RasterState,
 }
 
 impl Node {
@@ -221,6 +223,7 @@ impl Node {
             painted_bounds: Rect::ZERO,
             seen_flags: NodeFlags::empty(),
             anim: None,
+            raster: crate::core::raster::RasterState::default(),
         }
     }
 

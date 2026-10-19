@@ -1419,6 +1419,7 @@ name = "vetro-bench"
 version = "0.1.0"
 dependencies = [
  "libvetro",
+ "skia-safe",
 ]
 
 [[package]]
