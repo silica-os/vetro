@@ -13,9 +13,11 @@ use crate::color::Color;
 use crate::core::a11y::{A11y, Action, Role};
 use crate::core::event::{Button, Event, Handled, Key};
 use crate::core::layout::Proposal;
-use crate::core::ui::{Cursor, Request};
+use crate::core::tree::ViewId;
+use crate::core::ui::{Cursor, Request, Ui};
 use crate::core::value::{Prop, Signal, Value};
 use crate::core::widget::{EventCx, FocusKind, Interaction, LayoutCx, PaintCx, PropChange, Widget};
+use crate::core::window::WindowId;
 use crate::geom::{Point, Rect, Size};
 use crate::shape::Shape;
 use crate::style::{Border, BorderPosition, Style};
@@ -166,6 +168,8 @@ pub struct TextField {
     clear_pressed: bool,
     combo_pressed: bool,
     open: bool,
+    /// The popup that shows the list of a combo box while it is open.
+    popup: Option<WindowId>,
     token_labels: Vec<Label>,
     last_text_rect: Rect,
 }
@@ -201,6 +205,7 @@ impl TextField {
             clear_pressed: false,
             combo_pressed: false,
             open: false,
+            popup: None,
             token_labels: Vec::new(),
             last_text_rect: Rect::ZERO,
         }
@@ -537,6 +542,14 @@ impl TextField {
             caret.height,
         );
         cx.request(Request::TextInput(window, Some(r)));
+        // The surrounding text (not for a secure field): the whole text of a line field.
+        if self.kind != FieldKind::Secure {
+            let sel = self.editor.selection();
+            let text = self.editor.text().to_string();
+            let c = sel.focus.min(text.len());
+            let a = sel.anchor.min(text.len());
+            cx.request(Request::TextInputSurrounding(window, text, c, a));
+        }
     }
 
     fn offset_at(&self, local: Point) -> usize {
@@ -683,19 +696,87 @@ impl TextField {
             return;
         }
         self.open = open;
+        if open {
+            self.open_list(cx);
+        } else if let Some(w) = self.popup.take() {
+            cx.ui().close_window(w);
+        }
         cx.emit(Signal::ExpandedChanged, Value::Bool(open));
         cx.request_paint();
     }
 
-    #[allow(dead_code)]
-    fn pick(&mut self, cx: &mut EventCx<'_>, i: usize) {
-        let Some(option) = self.options.get(i).cloned() else {
+    /// Shows the options as a menu under the field, as wide as it, the current one checked.
+    fn open_list(&mut self, cx: &mut EventCx<'_>) {
+        let id = cx.id();
+        let Some(parent) = cx.window() else {
             return;
         };
-        self.editor.set_text(&option);
-        self.open = false;
-        cx.emit(Signal::SelectionChanged, Value::Str(option));
-        self.changed(cx);
+        let anchor = cx.window_rect();
+        let current = self.selected_option();
+        let rows: Vec<crate::amalfi::menus::Row> = self
+            .options
+            .iter()
+            .enumerate()
+            .map(|(i, o)| crate::amalfi::menus::Row {
+                checked: current == Some(i),
+                ..crate::amalfi::menus::Row::item(o)
+            })
+            .collect();
+        let ui = cx.ui();
+        let (m, _) = crate::amalfi::menus::menu(ui, &rows);
+        ui.connect(m, Signal::Activated, move |ui, _, v| {
+            if let Some(i) = v.as_int().and_then(|i| usize::try_from(i).ok()) {
+                TextField::choose_in(ui, id, i);
+            }
+        });
+        ui.connect(m, Signal::CloseRequested, move |ui, _, _| {
+            TextField::dismiss(ui, id);
+        });
+        let w = crate::amalfi::menus::present(
+            ui,
+            parent,
+            anchor,
+            m,
+            crate::amalfi::menus::Placement::List,
+        );
+        self.popup = Some(w);
+        ui.set_focus(m, true);
+    }
+
+    /// The list of the combo box `id` chose option `i`: its text becomes the option and the
+    /// list closes.
+    pub fn choose_in(ui: &mut Ui, id: ViewId, i: usize) {
+        let mut closing = None;
+        let chosen = ui
+            .with_widget::<TextField, _>(id, |f| {
+                let option = f.options.get(i).cloned()?;
+                f.open = false;
+                closing = f.popup.take();
+                Some(option)
+            })
+            .flatten();
+        if let Some(w) = closing {
+            ui.close_window(w);
+        }
+        if let Some(option) = chosen {
+            let _ = ui.set(id, Prop::Text, Value::Str(option.clone()));
+            ui.emit(id, Signal::SelectionChanged, Value::Str(option.clone()));
+            ui.emit(id, Signal::TextChanged, Value::Str(option));
+            ui.emit(id, Signal::ExpandedChanged, Value::Bool(false));
+        }
+    }
+
+    /// Closes the list of the combo box `id` without a choice.
+    pub fn dismiss(ui: &mut Ui, id: ViewId) {
+        let mut closing = None;
+        ui.with_widget::<TextField, _>(id, |f| {
+            f.open = false;
+            closing = f.popup.take();
+        });
+        if let Some(w) = closing {
+            ui.close_window(w);
+            ui.emit(id, Signal::ExpandedChanged, Value::Bool(false));
+        }
     }
 
     /// Whether the editor's text is one of the options (the one checked in the list).
@@ -1377,6 +1458,7 @@ impl Widget for TextField {
                 Some(Value::Range(r.anchor, r.focus))
             }
             Prop::ControlSize => Some(Value::Int(self.size.to_int())),
+            Prop::Expanded if self.kind == FieldKind::Combo => Some(Value::Bool(self.open)),
             _ => None,
         }
     }
@@ -1695,5 +1777,39 @@ mod tests {
         )));
         ui.text_input(win, "か");
         assert_eq!(ui.get(id, Prop::Text), Some(Value::from("abか")));
+    }
+}
+
+#[cfg(test)]
+mod combo_list_tests {
+    use super::*;
+    use crate::core::event::{KeyEvent, Mods};
+    use crate::core::window::WindowKind;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn the_down_key_opens_the_list_and_a_choice_sets_the_text() {
+        let mut ui = Ui::new_headless();
+        let win = ui.create_window(WindowKind::Normal, Size::new(400.0, 300.0));
+        let f = ui.create(TextField::combo(&["Lemon", "Orange", "Pear"]).with_text("Pear"));
+        let _ = ui.set(f, Prop::Width, Value::from(200.0));
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let l = log.clone();
+        ui.connect(f, Signal::SelectionChanged, move |_, _, v| {
+            l.borrow_mut()
+                .push(v.as_str().unwrap_or_default().to_string());
+        });
+        ui.set_content(win, f);
+        ui.show_window(win);
+        ui.set_focus(f, true);
+        ui.prepare_frame(win);
+        ui.key(win, KeyEvent::press(Key::Down, Mods::empty()));
+        assert_eq!(ui.get(f, Prop::Expanded), Some(Value::Bool(true)));
+        TextField::choose_in(&mut ui, f, 1);
+        ui.flush();
+        assert_eq!(ui.get(f, Prop::Text), Some(Value::Str("Orange".into())));
+        assert_eq!(ui.get(f, Prop::Expanded), Some(Value::Bool(false)));
+        assert_eq!(*log.borrow(), vec!["Orange".to_string()]);
     }
 }

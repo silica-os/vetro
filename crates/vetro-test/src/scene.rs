@@ -70,6 +70,9 @@ pub struct Scene {
     /// Aspects (`#blurs` …) whose differences are ignored for every layer (a defect of the
     /// kit that touches many layers, recorded in docs/kit-issues.md).
     pub ignore_aspects: Vec<String>,
+    /// Layer paths whose whole subtree is left out of the geometry (a nested component that
+    /// has masters of its own, replaced by a placeholder).
+    pub skip_trees: Vec<String>,
 }
 
 impl Scene {
@@ -98,6 +101,7 @@ impl Scene {
             extra_mask: Vec::new(),
             png_margin: false,
             ignore_aspects: Vec::new(),
+            skip_trees: Vec::new(),
         }
     }
 
@@ -341,7 +345,13 @@ impl Scene {
     /// content, not the instance's overrides (the text of a row in a group): such layers are
     /// not comparable.
     pub fn auto_geometry_except(&mut self, skip: &[&str], deviations: &[&str]) -> Vec<String> {
-        let skipped = |p: &str| skip.iter().any(|s| p.ends_with(s));
+        let trees = self.skip_trees.clone();
+        let skipped = |p: &str| {
+            skip.iter().any(|s| p.ends_with(s))
+                || trees
+                    .iter()
+                    .any(|t| p == t || p.starts_with(&format!("{t}/")))
+        };
         let mapping: Vec<(String, String)> = self
             .default_mapping()
             .into_iter()

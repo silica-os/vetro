@@ -76,3 +76,44 @@ test that names it, until the kit is fixed.
 - The detached popovers name their surface `Body` (the others `Surface`).
 - `Content/Form` renders 3 pt taller than its master (shadows of the content); compared at the
   top left corner.
+
+## Alerts
+
+- The app and volume icons are bitmaps in the kit (and the alert's icon an `Image` layer): the
+  alert reserves 56 pt and the caller puts the icon in; the tests mask the icon's box.
+- The Gatekeeper badges are squashed (24 x 20 and 24 x 22 pt discs at odd y): not compared.
+- Labels of buttons wider than their text keep the master's label place (resized nested
+  instances): not compared; Sketch measures `Move to Trash` and `Quit and Move` 4 pt wider than
+  we do, which moves their centred button group by 2 pt.
+- `Gatekeeper/Confirm`: Sketch fits the title in 240 pt where its text is 240.85 wide (3 lines
+  instead of 4); the test gives the text column 241 pt. Its message is `Text/Tertiary` where the
+  other alerts use secondary.
+
+## Dialogs
+
+- Buttons wider than their text (72 pt minimum) keep the master label's place in the kit's
+  resized nested instances: the labels' frames are not compared.
+- The panels' rows and sections are the Forms masters with their quirks (see Forms).
+
+## Status Bar
+
+- Sketch measures the clock text 4 pt wider than we do (104 against 100): the instance's width
+  is given to the item as a minimum so the items after it line up.
+- The Lock Screen bar of the Light appearance uses the Dark item masters (light ink on the
+  wallpaper): `StatusItem::on_dark`.
+- The Increase Contrast plate is a plain background blur (not Glass) with the kit's fill and rim;
+  the Reduce Transparency plate keeps the rim light.
+
+## Windows
+
+- The nested sidebar panel keeps the master's footer and surface height when the instance is
+  resized in a window; not compared.
+- In inactive windows the kit swaps the selected sidebar row for the inactive master through a
+  `symbolID` override; the export's text overrides then land on the wrong layers (the icon
+  gets the label). The test draws the row inactive with its icon.
+- The sheet is 266 high in the window where its alert master is 268.
+- Window shadow, clip, surface and rim are four layers of one frame (`WindowFrame`); the
+  Utility window's radius is 14.
+- Nested components with masters of their own that are not part of this crate's other families'
+  builders (group boxes, the segmented control, the checkbox group, the search field, the menu
+  bar of the full screen strip) are placeholders and masked.
