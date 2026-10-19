@@ -274,6 +274,9 @@ pub struct Platform {
     cursor_shapes: Option<CursorShapeManager>,
     text_input_manager: Option<ZwpTextInputManagerV3>,
     data_devices: Option<DataDeviceManagerState>,
+    activation: Option<smithay_client_toolkit::activation::ActivationState>,
+    /// The token the launcher gave (`XDG_ACTIVATION_TOKEN`), used by the first window.
+    launch_token: Option<String>,
     glass_manager: Option<SilicaGlassManagerV1>,
     window_manager: Option<SilicaWindowManagerV1>,
     menu_manager: Option<SilicaMenuManagerV1>,
@@ -503,6 +506,11 @@ impl Platform {
             cursor_shapes: CursorShapeManager::bind(globals, &qh).ok(),
             text_input_manager: globals.bind(&qh, 1..=1, ()).ok(),
             data_devices: DataDeviceManagerState::bind(globals, &qh).ok(),
+            activation: smithay_client_toolkit::activation::ActivationState::bind(globals, &qh)
+                .ok(),
+            launch_token: std::env::var("XDG_ACTIVATION_TOKEN")
+                .ok()
+                .filter(|t| !t.is_empty()),
             glass_manager: globals.bind(&qh, 1..=9, ()).ok(),
             window_manager: globals.bind(&qh, 1..=4, ()).ok(),
             menu_manager: globals.bind(&qh, 1..=2, ()).ok(),
@@ -844,6 +852,13 @@ impl Platform {
             && matches!(role, Role::Toplevel(_))
         {
             a.add_window(id);
+        }
+        if let (Role::Toplevel(_), Some(act)) = (&role, &self.activation) {
+            // The first window of a launched app takes the launcher's activation token, so
+            // it comes to the front (xdg-activation).
+            if let Some(token) = self.launch_token.take() {
+                act.activate::<Platform>(role.wl_surface(), token);
+            }
         }
         self.surfaces.push(Surface {
             id,
@@ -2390,6 +2405,14 @@ impl Dispatch<SilicaPopupMenuV1, u64> for Platform {
         state.ui.popup_menu_result(*token, chosen);
     }
 }
+
+impl smithay_client_toolkit::activation::ActivationHandler for Platform {
+    type RequestData = smithay_client_toolkit::activation::RequestData;
+
+    fn new_token(&mut self, _token: String, _data: &Self::RequestData) {}
+}
+
+smithay_client_toolkit::delegate_activation!(Platform);
 
 delegate_compositor!(Platform);
 delegate_output!(Platform);
