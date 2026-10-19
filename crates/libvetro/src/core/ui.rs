@@ -120,6 +120,27 @@ pub enum Request {
     StartMove(WindowId),
     /// The accessibility tree changed.
     AccessibilityChanged(WindowId),
+    /// The menu bar changed ([`Ui::menu_bar`]).
+    SetMenuBar,
+    /// Show a pop-up menu (answer with [`Ui::popup_menu_result`]).
+    PopupMenu(Box<crate::core::menu::PopupMenuRequest>),
+}
+
+/// A compositor glass region (see [`Ui::glass_regions`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GlassRegion {
+    /// Rectangle in window coordinates.
+    pub rect: Rect,
+    /// Corner radius.
+    pub radius: f32,
+    /// Corner smoothing.
+    pub smoothing: f32,
+    /// Material name.
+    pub material: &'static str,
+    /// Profile.
+    pub profile: crate::core::display::GlassProfile,
+    /// Opacity.
+    pub opacity: f32,
 }
 
 /// A signal handler.
@@ -132,9 +153,33 @@ pub type ShortcutHandler = Box<dyn FnMut(&mut Ui)>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HandlerId(u64);
 
+impl HandlerId {
+    /// The id as a number (never 0).
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// The id of a number.
+    pub fn from_raw(raw: u64) -> HandlerId {
+        HandlerId(raw)
+    }
+}
+
 /// A timer's id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TimerId(u64);
+
+impl TimerId {
+    /// The id as a number (never 0).
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// The id of a number.
+    pub fn from_raw(raw: u64) -> TimerId {
+        TimerId(raw)
+    }
+}
 
 struct Timer {
     id: TimerId,
@@ -162,15 +207,22 @@ pub struct Ui {
     /// Monotonic time in seconds (set by the platform, or by tests).
     pub now: f64,
     animating: Vec<ViewId>,
+    pub(crate) node_anims: Vec<ViewId>,
     timers: Vec<Timer>,
     next_timer: u64,
     clipboard: Option<String>,
     /// Whether the platform serves the clipboard (headless: an in-process one).
     pub has_platform_clipboard: bool,
+    /// Whether the compositor draws glass regions (silica-glass-v1).
+    pub compositor_glass_available: bool,
     flushing: bool,
     state_check: Vec<ViewId>,
     /// Global keyboard shortcuts of the app (menu key equivalents): shortcut → handler.
     shortcuts: Vec<(crate::core::event::Shortcut, ShortcutHandler)>,
+    menu_shortcuts: Vec<(crate::core::event::Shortcut, u32)>,
+    pub(crate) menus: crate::core::menu::MenuState,
+    pub(crate) app_info: crate::core::app::AppInfo,
+    pub(crate) app_handler: Option<crate::core::app::AppHandler>,
     /// The tooltip presenter.
     pub(crate) tooltips: crate::amalfi::tooltips::Presenter,
 }
@@ -195,13 +247,19 @@ impl Ui {
             requests: Vec::new(),
             now: 0.0,
             animating: Vec::new(),
+            node_anims: Vec::new(),
             timers: Vec::new(),
             next_timer: 1,
             clipboard: None,
             has_platform_clipboard: false,
+            compositor_glass_available: false,
             flushing: false,
             state_check: Vec::new(),
             shortcuts: Vec::new(),
+            menu_shortcuts: Vec::new(),
+            menus: crate::core::menu::MenuState::default(),
+            app_info: crate::core::app::AppInfo::default(),
+            app_handler: None,
             tooltips: crate::amalfi::tooltips::Presenter::default(),
         }
     }
@@ -252,12 +310,24 @@ impl Ui {
         self.set_window_recursive(child, window);
         self.request_layout(parent);
         self.request_paint(child);
+        if let Some(n) = self.tree.get_mut(child) {
+            n.flags.remove(NodeFlags::LEAVING);
+        }
+        self.animate_insert(child);
         Ok(())
     }
 
     /// Removes `child` from its parent (the parent's reference is dropped; a view nobody
     /// references any more is destroyed).
     pub fn detach(&mut self, child: ViewId) {
+        if self.begin_leave(child) {
+            return;
+        }
+        self.detach_now(child);
+    }
+
+    /// Removes `child` from its parent at once (no leave transition).
+    pub fn detach_now(&mut self, child: ViewId) {
         let Some(parent) = self.tree.parent(child) else {
             return;
         };
@@ -488,6 +558,20 @@ impl Ui {
             Prop::Scale => {
                 m.scale = value.as_f32().ok_or(Error::BadValue)?;
                 PropChange::Paint
+            }
+            Prop::Animation => {
+                m.animation = value
+                    .as_int()
+                    .and_then(crate::core::anim::timing_from_int)
+                    .ok_or(Error::BadValue)?;
+                PropChange::Nothing
+            }
+            Prop::Transition => {
+                m.transition = value
+                    .as_int()
+                    .and_then(crate::core::anim::Transition::from_int)
+                    .ok_or(Error::BadValue)?;
+                PropChange::Nothing
             }
             Prop::Hidden => {
                 let hidden = value.as_bool().ok_or(Error::BadValue)?;
@@ -1154,6 +1238,16 @@ impl Ui {
         }
     }
 
+    pub(crate) fn clear_menu_shortcuts(&mut self) {
+        self.menu_shortcuts.clear();
+    }
+
+    pub(crate) fn add_menu_shortcut(&mut self, shortcut: &str, id: u32) {
+        if let Some(sc) = crate::core::event::Shortcut::parse(shortcut) {
+            self.menu_shortcuts.push((sc, id));
+        }
+    }
+
     // ----- Events ------------------------------------------------------------------------
 
     /// Delivers an event to one view (no bubbling); returns whether it handled it.
@@ -1246,7 +1340,8 @@ impl Ui {
 
     fn hit_view(&self, id: ViewId, p: Point) -> Option<(ViewId, Point)> {
         let n = self.tree.get(id)?;
-        if n.flags.contains(NodeFlags::HIDDEN) || n.modifiers.opacity <= 0.0 {
+        if n.flags.intersects(NodeFlags::HIDDEN | NodeFlags::LEAVING) || n.modifiers.opacity <= 0.0
+        {
             return None;
         }
         let mut local = p - n.frame.origin() - n.modifiers.offset;
@@ -1568,6 +1663,19 @@ impl Ui {
             };
         }
         if !handled && key.pressed {
+            let name = key.key.name();
+            let mods = key.mods - Mods::CAPS;
+            let id = self
+                .menu_shortcuts
+                .iter()
+                .find(|(sc, _)| sc.key == name && sc.mods == mods)
+                .map(|(_, id)| *id);
+            if let Some(id) = id {
+                self.menu_activated(id);
+                handled = true;
+            }
+        }
+        if !handled && key.pressed {
             let mut list = std::mem::take(&mut self.shortcuts);
             for (sc, f) in &mut list {
                 if sc.key == key.key.name() && sc.mods == (key.mods - Mods::CAPS) {
@@ -1666,7 +1774,7 @@ impl Ui {
 
     /// Whether anything animates.
     pub fn is_animating(&self) -> bool {
-        !self.animating.is_empty()
+        !self.animating.is_empty() || !self.node_anims.is_empty()
     }
 
     /// Advances time by `dt` seconds: ticks animations, fires due timers, runs handlers.
@@ -1697,6 +1805,7 @@ impl Ui {
             }
         }
         self.animating = still;
+        self.tick_node_anims(dt as f32);
         self.fire_timers();
         self.flush();
     }
@@ -1895,10 +2004,18 @@ impl Ui {
         let opts = PaintOptions {
             backdrop: !theme.appearance.reduce_transparency,
             blur_fallback: None,
+            compositor_glass: self.window(window).is_some_and(|w| w.compositor_glass)
+                && self.compositor_glass_available,
         };
         canvas.save();
         if let Some(c) = clip {
             canvas.clip_rect(c.to_sk(), ClipOp::Intersect, false);
+        }
+        if self.window(window).is_some_and(|w| w.opaque) {
+            canvas.draw_color(
+                theme.colors.surface_window.to_sk(),
+                skia_safe::BlendMode::Src,
+            );
         }
         self.paint_view(root, canvas, opts, false);
         canvas.restore();
@@ -1910,18 +2027,26 @@ impl Ui {
             return;
         }
         let m = &n.modifiers;
+        let (aoff, aop, ascale) = match &n.anim {
+            Some(a) => (a.offset.get(), a.opacity.get(), a.scale.get()),
+            None => (Point::ZERO, 1.0, 1.0),
+        };
         canvas.save();
-        canvas.translate((n.frame.x + m.offset.x, n.frame.y + m.offset.y));
-        if (m.scale - 1.0).abs() > 1e-6 {
+        canvas.translate((
+            n.frame.x + m.offset.x + aoff.x,
+            n.frame.y + m.offset.y + aoff.y,
+        ));
+        let scale = m.scale * ascale;
+        if (scale - 1.0).abs() > 1e-6 {
             let c = (n.frame.width / 2.0, n.frame.height / 2.0);
             canvas.translate(c);
-            canvas.scale((m.scale, m.scale));
+            canvas.scale((scale, scale));
             canvas.translate((-c.0, -c.1));
         }
         let dim_here = !dimmed
             && n.flags.contains(NodeFlags::DISABLED)
             && n.widget.as_deref().is_some_and(|w| w.dims_when_disabled());
-        let mut alpha = m.opacity;
+        let mut alpha = m.opacity * aop;
         if dim_here {
             alpha *= crate::amalfi::tokens::states::DISABLED_OPACITY;
         }
@@ -2006,6 +2131,53 @@ impl Ui {
             win.damage = win.damage.union(r);
         }
         self.request_frame(w);
+    }
+
+    /// The compositor glass regions of a window (window coordinates), in painting order:
+    /// rectangle, corner radius, smoothing, material, profile.
+    pub fn glass_regions(&self, window: WindowId) -> Vec<GlassRegion> {
+        let Some(root) = self.window(window).map(|w| w.root) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for v in self.tree.descendants(root) {
+            if !self.is_visible(v) {
+                continue;
+            }
+            let Some(n) = self.tree.get(v) else { continue };
+            if n.modifiers.opacity <= 0.0 {
+                continue;
+            }
+            let origin = self.tree.window_origin(v);
+            for item in n.display.items.iter().chain(n.display_over.items.iter()) {
+                if let crate::core::display::DisplayItem::Glass {
+                    rect,
+                    shape,
+                    material,
+                    profile,
+                    ..
+                } = item
+                {
+                    let (radius, smoothing) = match shape {
+                        Shape::Rect { corners, smoothing } => (corners.top_left, *smoothing),
+                        Shape::Capsule => (
+                            rect.width.min(rect.height) / 2.0,
+                            crate::shape::AMALFI_SMOOTHING,
+                        ),
+                        _ => (0.0, 0.0),
+                    };
+                    out.push(GlassRegion {
+                        rect: rect.translate(origin),
+                        radius,
+                        smoothing,
+                        material,
+                        profile: *profile,
+                        opacity: n.modifiers.opacity,
+                    });
+                }
+            }
+        }
+        out
     }
 
     /// The display lists of a view (under, over), for the inspector and parity tests.

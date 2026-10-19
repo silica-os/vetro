@@ -71,14 +71,14 @@ pub fn app_color(dark: bool, name: &str) -> Option<Color> {
         .map(|(_, c)| *c)
 }
 
+/// A type style by its token name, as a static reference.
+pub fn type_style_ref(name: &str) -> Option<&'static TypeStyle> {
+    typography::ALL.iter().find(|t| t.name == name)
+}
+
 /// A type style by its token name.
 pub fn type_style(name: &str) -> Option<TypeStyle> {
     typography::ALL.iter().find(|t| t.name == name).copied()
-}
-
-/// The type token by name, borrowed.
-pub fn type_style_ref(name: &str) -> Option<&'static TypeStyle> {
-    typography::ALL.iter().find(|t| t.name == name)
 }
 
 #[cfg(test)]

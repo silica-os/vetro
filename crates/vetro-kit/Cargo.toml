@@ -1,0 +1,22 @@
+[package]
+name = "vetro-kit"
+description = "Vetro's safe Rust API: the C ABI of libvetro.so wrapped in Rust objects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+default = ["static"]
+# Link libvetro statically (inside this workspace: tests, examples).
+static = ["dep:libvetro"]
+# Link the system's libvetro.so (distribution builds: `--no-default-features --features dynamic`).
+dynamic = ["vetro-sys/dynamic"]
+
+[dependencies]
+vetro-sys = { path = "../vetro-sys" }
+libvetro = { path = "../libvetro", optional = true }
+
+[lints]
+workspace = true

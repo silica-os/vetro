@@ -63,6 +63,8 @@ bitflags::bitflags! {
         const ANIMATING = 1 << 9;
         /// Is a window's root.
         const ROOT = 1 << 10;
+        /// Being removed: drawn while its leave transition plays, out of layout and hits.
+        const LEAVING = 1 << 11;
     }
 }
 
@@ -109,6 +111,10 @@ pub struct Modifiers {
     pub offset: Point,
     /// Scale after layout, about the centre.
     pub scale: f32,
+    /// Implicit animation of position changes.
+    pub animation: Option<crate::motion::Timing>,
+    /// Insertion and removal transition.
+    pub transition: crate::core::anim::Transition,
 }
 
 impl Default for Modifiers {
@@ -129,6 +135,8 @@ impl Default for Modifiers {
             aspect_ratio: None,
             offset: Point::ZERO,
             scale: 1.0,
+            animation: None,
+            transition: crate::core::anim::Transition::None,
         }
     }
 }
@@ -178,6 +186,8 @@ pub struct Node {
     pub painted_bounds: Rect,
     /// The interaction flags the widget was last told about ([`Widget::state_changed`]).
     pub seen_flags: NodeFlags,
+    /// Implicit animation state.
+    pub anim: Option<Box<crate::core::anim::NodeAnim>>,
 }
 
 impl Node {
@@ -200,6 +210,7 @@ impl Node {
             display_over: DisplayList::default(),
             painted_bounds: Rect::ZERO,
             seen_flags: NodeFlags::empty(),
+            anim: None,
         }
     }
 

@@ -84,6 +84,10 @@ impl Scene {
         let rb = master.render_bounds();
         let origin = Point::new(-rb.x, -rb.y);
         let window = ui.create_window(WindowKind::Normal, rb.size());
+        // The kit's PNGs are transparent around the component.
+        if let Some(w) = ui.window_mut(window) {
+            w.opaque = false;
+        }
         ui.show_window(window);
         Scene {
             ui,

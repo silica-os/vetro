@@ -8,9 +8,12 @@
 pub mod amalfi;
 pub mod color;
 pub mod core;
+pub mod ffi;
 pub mod geom;
 pub mod motion;
+pub mod platform;
 pub mod render;
+pub mod services;
 pub mod shape;
 pub mod style;
 pub mod text;

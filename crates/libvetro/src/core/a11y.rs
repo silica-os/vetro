@@ -243,3 +243,41 @@ impl Ui {
         }
     }
 }
+
+impl Ui {
+    /// Performs an accessibility action on a view (Orca, tests): a click activates a control,
+    /// increment and decrement press the arrow keys, expand and collapse toggle a disclosure,
+    /// show-menu asks for the context menu.
+    pub fn perform(&mut self, id: ViewId, action: Action) -> bool {
+        use crate::core::event::{Event, Key, KeyEvent, Mods};
+        if !self.tree.contains(id) || self.is_disabled(id) {
+            return false;
+        }
+        let handled = match action {
+            Action::Click => self.send(id, &Event::Activate),
+            Action::Focus => {
+                self.set_focus(id, true);
+                true
+            }
+            Action::Increment => {
+                self.send(id, &Event::Key(KeyEvent::press(Key::Up, Mods::empty())))
+            }
+            Action::Decrement => {
+                self.send(id, &Event::Key(KeyEvent::press(Key::Down, Mods::empty())))
+            }
+            Action::Expand | Action::Collapse => self.send(id, &Event::Activate),
+            Action::ShowMenu => {
+                let at = self.tree.window_rect(id).center();
+                self.emit(
+                    id,
+                    crate::core::value::Signal::ContextMenu,
+                    crate::core::value::Value::Point(at),
+                );
+                true
+            }
+            Action::ScrollIntoView | Action::SetValue => false,
+        };
+        self.flush();
+        handled
+    }
+}

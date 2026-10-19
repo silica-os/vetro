@@ -1,0 +1,19 @@
+[package]
+name = "vetro"
+description = "Vetro's declarative layer (SwiftUI-like): views as values, state, a reconciler onto vetro-kit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+default = ["static"]
+static = ["vetro-kit/static"]
+dynamic = ["vetro-kit/dynamic"]
+
+[dependencies]
+vetro-kit = { path = "../vetro-kit", default-features = false }
+
+[lints]
+workspace = true

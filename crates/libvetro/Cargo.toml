@@ -16,9 +16,31 @@ serde_json = "1"
 
 [dependencies]
 skia-safe.workspace = true
+vetro-sys = { path = "../vetro-sys" }
 tracing = "0.1"
 bitflags = "2"
 unicode-segmentation = "1"
+smithay-client-toolkit = { version = "0.20", default-features = false, features = ["calloop", "xkbcommon"] }
+calloop = { version = "0.14", features = ["executor"] }
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
+silica-protocols = { git = "https://github.com/silica-os/silica-desktop", rev = "084363dc6770dbdd1d2642f45c4b44f7361ac026", features = ["client"] }
+silica-control = { git = "https://github.com/silica-os/silica-desktop", rev = "084363dc6770dbdd1d2642f45c4b44f7361ac026" }
+serde_json = "1"
+khronos-egl = { version = "6", default-features = false, features = ["1_5", "dynamic"] }
+wayland-egl = "0.32"
+libloading = "0.8"
+ash = { version = "0.38", default-features = false, features = ["loaded", "std"] }
+rustix = { version = "1", features = ["fs", "pipe"] }
+zbus = "5.19"
+serde = { version = "1", features = ["derive"] }
+futures-lite = "2"
+accesskit_unix = "0.24"
+accesskit = "0.25"
+
+[dev-dependencies]
+async-io = "2"
 
 [lints]
 workspace = true

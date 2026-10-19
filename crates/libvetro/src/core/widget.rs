@@ -201,7 +201,13 @@ impl LayoutCx<'_> {
             .children(self.id)
             .iter()
             .copied()
-            .filter(|c| !self.ui.tree.flags(*c).contains(NodeFlags::HIDDEN))
+            .filter(|c| {
+                !self
+                    .ui
+                    .tree
+                    .flags(*c)
+                    .intersects(NodeFlags::HIDDEN | NodeFlags::LEAVING)
+            })
             .collect()
     }
 
@@ -323,6 +329,21 @@ impl PaintCx<'_> {
     /// The current time (seconds, monotonic).
     pub fn now(&self) -> f64 {
         self.ui.now
+    }
+
+    /// Records a glass surface of `material` (`Glass/Regular`, `Glass/Thick`,
+    /// `Glass/Clear`): drawn by the compositor in windows whose backdrop is outside them,
+    /// by the client otherwise.
+    pub fn glass(
+        &mut self,
+        name: &str,
+        rect: Rect,
+        shape: crate::shape::Shape,
+        material: &'static str,
+        profile: crate::core::display::GlassProfile,
+    ) {
+        let style = self.theme.material_style(material);
+        self.rec.glass(name, rect, shape, style, material, profile);
     }
 }
 

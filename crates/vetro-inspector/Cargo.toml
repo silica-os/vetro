@@ -1,0 +1,15 @@
+[package]
+name = "vetro-inspector"
+description = "Inspects a running Vetro process: windows, view tree, layers, accessibility"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "vetro-inspector"
+path = "src/main.rs"
+
+[lints]
+workspace = true

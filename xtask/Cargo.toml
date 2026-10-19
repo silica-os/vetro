@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 serde_json = "1"
+vetro-sys = { path = "../crates/vetro-sys" }
 
 [lints]
 workspace = true

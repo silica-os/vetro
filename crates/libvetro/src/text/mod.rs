@@ -3,5 +3,6 @@
 pub mod edit;
 pub mod fonts;
 pub mod layout;
+pub mod view;
 
 pub use layout::{Align, AttributedString, ParagraphOptions, TextLayout, TextStyle};

@@ -378,6 +378,10 @@ numbered_enum! {
         FontSize = 158,
         /// Font weight override (`Int`).
         FontWeight = 159,
+        /// Implicit animation of position changes (`Int`: 0 none, 1–5 springs, 6–9 fades).
+        Animation = 160,
+        /// Insertion and removal transition (`Int`: 0 none, 1 opacity, 2 scale).
+        Transition = 161,
     }
 }
 
