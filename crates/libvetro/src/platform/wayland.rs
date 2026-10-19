@@ -261,6 +261,29 @@ fn err(e: impl std::fmt::Display) -> PlatformError {
 /// Connects to the Wayland display, runs `setup` on the core, and runs the event loop until
 /// the app quits (the last window closes or [`Request::Quit`]).
 pub fn run(app_id: &str, setup: impl FnOnce(&mut Ui)) -> Result<(), PlatformError> {
+    run_with(app_id, &[], setup)
+}
+
+/// [`run`] with the files the app was launched with: when another instance of `app_id` runs,
+/// it gets them (or is reopened) and this process returns at once.
+pub fn run_with(
+    app_id: &str,
+    files: &[String],
+    setup: impl FnOnce(&mut Ui),
+) -> Result<(), PlatformError> {
+    if std::env::var_os("VETRO_MULTI_INSTANCE").is_none()
+        && crate::platform::registry::forward(app_id, files)
+    {
+        tracing::info!("{app_id}: the running process takes over");
+        return Ok(());
+    }
+    let registration = match crate::platform::registry::register(app_id) {
+        Ok(r) => Some(r),
+        Err(e) => {
+            tracing::info!("app registry: {e}");
+            None
+        }
+    };
     let conn = Connection::connect_to_env().map_err(err)?;
     let (globals, queue) = registry_queue_init::<Platform>(&conn).map_err(err)?;
     let qh = queue.handle();
@@ -299,8 +322,48 @@ pub fn run(app_id: &str, setup: impl FnOnce(&mut Ui)) -> Result<(), PlatformErro
         .handle()
         .insert_source(ping_source, |(), _, _| {})
         .map_err(|e| err(format!("ping source: {e}")))?;
+    let _registration = match registration {
+        Some((reg, listener)) => {
+            let source = smithay_client_toolkit::reexports::calloop::generic::Generic::new(
+                listener,
+                smithay_client_toolkit::reexports::calloop::Interest::READ,
+                smithay_client_toolkit::reexports::calloop::Mode::Level,
+            );
+            let _ = event_loop
+                .handle()
+                .insert_source(source, |_, l, p: &mut Platform| {
+                    while let Ok((stream, _)) = l.accept() {
+                        let Some(req) = crate::platform::registry::read(&stream) else {
+                            continue;
+                        };
+                        if req == crate::platform::registry::RegistryRequest::Status {
+                            let shown = p.ui.windows().any(|w| w.visible);
+                            crate::platform::registry::answer(
+                                &stream,
+                                if shown { "shown" } else { "hidden" },
+                            );
+                            continue;
+                        }
+                        crate::platform::registry::answer(&stream, "ok");
+                        if let Some(e) = crate::platform::registry::event_of(&req) {
+                            p.ui.app_event(e);
+                        }
+                    }
+                    Ok(smithay_client_toolkit::reexports::calloop::PostAction::Continue)
+                });
+            Some(reg)
+        }
+        None => None,
+    };
     let mut platform = Platform::new(conn, &globals, qh, event_loop.handle())?;
     platform.pending = pending;
+    platform.ui.set_app_info(crate::core::app::AppInfo {
+        id: app_id.to_string(),
+        name: app_id.rsplit('.').next().unwrap_or(app_id).to_string(),
+        version: String::new(),
+        copyright: String::new(),
+        quit_enabled: true,
+    });
     platform.a11y = Some(crate::platform::a11y::Accessibility::new(ping));
     platform.app_id = app_id.to_string();
     setup(&mut platform.ui);
@@ -1853,21 +1916,114 @@ impl ShmHandler for Platform {
     }
 }
 
+/// The MIME types a drop target accepts, in preference order.
+const DROP_TYPES: [&str; 4] = [
+    "text/uri-list",
+    "text/plain;charset=utf-8",
+    "text/plain",
+    "UTF8_STRING",
+];
+
 impl DataDeviceHandler for Platform {
     fn enter(
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &WlDataDevice,
-        _: f64,
-        _: f64,
-        _: &wl_surface::WlSurface,
+        dev: &WlDataDevice,
+        _x: f64,
+        _y: f64,
+        _s: &wl_surface::WlSurface,
     ) {
+        let Some(offer) = self
+            .data_device
+            .as_ref()
+            .filter(|d| d.inner() == dev)
+            .and_then(|d| d.data().drag_offer())
+        else {
+            return;
+        };
+        let mime = offer.with_mime_types(|m| {
+            DROP_TYPES
+                .iter()
+                .find(|t| m.iter().any(|x| x == *t))
+                .map(|t| (*t).to_string())
+        });
+        offer.accept_mime_type(offer.serial, mime.clone());
+        let actions = wayland_client::protocol::wl_data_device_manager::DndAction::Copy;
+        if mime.is_some() {
+            offer.set_actions(actions, actions);
+        }
     }
+
     fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+
     fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice, _: f64, _: f64) {}
+
     fn selection(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
-    fn drop_performed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlDataDevice) {}
+
+    #[allow(unsafe_code)]
+    fn drop_performed(&mut self, _: &Connection, _: &QueueHandle<Self>, dev: &WlDataDevice) {
+        let Some(offer) = self
+            .data_device
+            .as_ref()
+            .filter(|d| d.inner() == dev)
+            .and_then(|d| d.data().drag_offer())
+        else {
+            return;
+        };
+        let Some(window) = self.window_of(&offer.surface) else {
+            return;
+        };
+        let pos = Point::new(offer.x as f32, offer.y as f32);
+        let mime = offer.with_mime_types(|m| {
+            DROP_TYPES
+                .iter()
+                .find(|t| m.iter().any(|x| x == *t))
+                .map(|t| (*t).to_string())
+        });
+        let Some(mime) = mime else { return };
+        let uri_list = mime == "text/uri-list";
+        let Ok(pipe) = offer.receive(mime) else {
+            return;
+        };
+        let _ = self.conn.flush();
+        let mut buf = Vec::new();
+        let res =
+            self.loop_handle
+                .insert_source(pipe, move |_, f, p: &mut Platform| {
+                    use std::io::Read;
+                    let mut chunk = [0u8; 8192];
+                    // SAFETY: calloop hands the pipe's file; reading does not invalidate it.
+                    let file = unsafe { f.get_mut() };
+                    loop {
+                        match file.read(&mut chunk) {
+                    Ok(0) => {
+                        let text = String::from_utf8_lossy(&buf).into_owned();
+                        let items: Vec<String> = if uri_list {
+                            text.lines()
+                                .map(str::trim)
+                                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                                .map(str::to_string)
+                                .collect()
+                        } else {
+                            vec![text]
+                        };
+                        offer.finish();
+                        p.ui.drop_items(window, pos, items);
+                        return smithay_client_toolkit::reexports::calloop::PostAction::Remove;
+                    }
+                    Ok(n) => buf.extend_from_slice(chunk.get(..n).unwrap_or_default()),
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        return smithay_client_toolkit::reexports::calloop::PostAction::Continue;
+                    }
+                    Err(_) => return smithay_client_toolkit::reexports::calloop::PostAction::Remove,
+                }
+                    }
+                });
+        if let Err(e) = res {
+            tracing::warn!("drop: {e}");
+        }
+    }
 }
 
 impl DataOfferHandler for Platform {

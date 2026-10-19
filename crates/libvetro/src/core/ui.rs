@@ -220,6 +220,8 @@ pub struct Ui {
     shortcuts: Vec<(crate::core::event::Shortcut, ShortcutHandler)>,
     menu_shortcuts: Vec<(crate::core::event::Shortcut, u32)>,
     pub(crate) menus: crate::core::menu::MenuState,
+    pub(crate) app_info: crate::core::app::AppInfo,
+    pub(crate) app_handler: Option<crate::core::app::AppHandler>,
 }
 
 impl Default for Ui {
@@ -252,6 +254,8 @@ impl Ui {
             shortcuts: Vec::new(),
             menu_shortcuts: Vec::new(),
             menus: crate::core::menu::MenuState::default(),
+            app_info: crate::core::app::AppInfo::default(),
+            app_handler: None,
         }
     }
 

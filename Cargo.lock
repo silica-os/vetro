@@ -726,6 +726,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
+ "silica-control",
  "silica-protocols",
  "skia-safe",
  "smithay-client-toolkit",
@@ -1131,6 +1132,15 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "silica-control"
+version = "0.0.0"
+source = "git+https://github.com/silica-os/silica-desktop?rev=084363dc6770dbdd1d2642f45c4b44f7361ac026#084363dc6770dbdd1d2642f45c4b44f7361ac026"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
