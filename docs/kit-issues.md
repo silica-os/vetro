@@ -76,3 +76,15 @@ test that names it, until the kit is fixed.
 - The detached popovers name their surface `Body` (the others `Surface`).
 - `Content/Form` renders 3 pt taller than its master (shadows of the content); compared at the
   top left corner.
+
+## Alerts
+
+- The app and volume icons are bitmaps in the kit (and the alert's icon an `Image` layer): the
+  alert reserves 56 pt and the caller puts the icon in; the tests mask the icon's box.
+- The Gatekeeper badges are squashed (24 x 20 and 24 x 22 pt discs at odd y): not compared.
+- Labels of buttons wider than their text keep the master's label place (resized nested
+  instances): not compared; Sketch measures `Move to Trash` and `Quit and Move` 4 pt wider than
+  we do, which moves their centred button group by 2 pt.
+- `Gatekeeper/Confirm`: Sketch fits the title in 240 pt where its text is 240.85 wide (3 lines
+  instead of 4); the test gives the text column 241 pt. Its message is `Text/Tertiary` where the
+  other alerts use secondary.
