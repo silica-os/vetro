@@ -1,6 +1,7 @@
 //! Amalfi: the tokens, the appearance and every component of the Silica 1.0 "Amalfi" kit.
 
 pub mod button;
+pub mod buttons;
 pub mod disclosure;
 pub mod fields;
 pub mod foundation;
