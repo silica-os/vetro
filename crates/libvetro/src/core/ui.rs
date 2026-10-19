@@ -122,6 +122,8 @@ pub enum Request {
     AccessibilityChanged(WindowId),
     /// The menu bar changed ([`Ui::menu_bar`]).
     SetMenuBar,
+    /// Keep the screen awake while the window is shown (video, presentations).
+    InhibitIdle(WindowId, bool),
     /// Show a pop-up menu (answer with [`Ui::popup_menu_result`]).
     PopupMenu(Box<crate::core::menu::PopupMenuRequest>),
 }
@@ -1744,6 +1746,19 @@ impl Ui {
             self.send(f, &Event::DeleteSurrounding { before, after });
         }
         self.flush();
+    }
+
+    /// A pinch at `pos` (`scale`: the change since the last event).
+    pub fn magnify(&mut self, window: WindowId, pos: Point, scale: f32, phase: Phase) {
+        if let Some((target, _)) = self.hit_test(window, pos) {
+            self.send_bubbling(target, &Event::Magnify { scale, phase });
+        }
+        self.flush();
+    }
+
+    /// Keeps the screen awake while `window` is shown.
+    pub fn inhibit_idle(&mut self, window: WindowId, on: bool) {
+        self.request(Request::InhibitIdle(window, on));
     }
 
     /// Items dropped at `pos`.

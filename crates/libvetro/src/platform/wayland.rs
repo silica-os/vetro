@@ -62,6 +62,12 @@ use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_man
 use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::{
     self, WpFractionalScaleV1,
 };
+use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
+use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1;
+use wayland_protocols::wp::pointer_gestures::zv1::client::zwp_pointer_gesture_pinch_v1::{
+    self, ZwpPointerGesturePinchV1,
+};
+use wayland_protocols::wp::pointer_gestures::zv1::client::zwp_pointer_gestures_v1::ZwpPointerGesturesV1;
 use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_manager_v3::ZwpTextInputManagerV3;
 use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3::{self, ZwpTextInputV3};
 use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
@@ -275,6 +281,11 @@ pub struct Platform {
     text_input_manager: Option<ZwpTextInputManagerV3>,
     data_devices: Option<DataDeviceManagerState>,
     activation: Option<smithay_client_toolkit::activation::ActivationState>,
+    gestures: Option<ZwpPointerGesturesV1>,
+    pinch: Option<ZwpPointerGesturePinchV1>,
+    pinch_scale: f64,
+    idle_manager: Option<ZwpIdleInhibitManagerV1>,
+    inhibitors: Vec<(WindowId, ZwpIdleInhibitorV1)>,
     /// The token the launcher gave (`XDG_ACTIVATION_TOKEN`), used by the first window.
     launch_token: Option<String>,
     glass_manager: Option<SilicaGlassManagerV1>,
@@ -508,6 +519,11 @@ impl Platform {
             data_devices: DataDeviceManagerState::bind(globals, &qh).ok(),
             activation: smithay_client_toolkit::activation::ActivationState::bind(globals, &qh)
                 .ok(),
+            gestures: globals.bind(&qh, 1..=3, ()).ok(),
+            pinch: None,
+            pinch_scale: 1.0,
+            idle_manager: globals.bind(&qh, 1..=1, ()).ok(),
+            inhibitors: Vec::new(),
             launch_token: std::env::var("XDG_ACTIVATION_TOKEN")
                 .ok()
                 .filter(|t| !t.is_empty()),
@@ -682,6 +698,19 @@ impl Platform {
             }
             Request::AccessibilityChanged(_) => {}
             Request::SetMenuBar => self.send_menu_bar(),
+            Request::InhibitIdle(id, on) => {
+                self.inhibitors.retain(|(w, i)| {
+                    let keep = *w != id;
+                    if !keep {
+                        i.destroy();
+                    }
+                    keep
+                });
+                if on && let (Some(m), Some(s)) = (&self.idle_manager, self.surface(id)) {
+                    let i = m.create_inhibitor(s.role.wl_surface(), &self.qh, ());
+                    self.inhibitors.push((id, i));
+                }
+            }
             Request::PopupMenu(req) => self.show_popup_menu(*req),
         }
     }
@@ -1786,6 +1815,10 @@ impl SeatHandler for Platform {
                             .cursor_shapes
                             .as_ref()
                             .map(|m| m.get_shape_device(&p, qh));
+                        self.pinch = self
+                            .gestures
+                            .as_ref()
+                            .map(|g| g.get_pinch_gesture(&p, qh, ()));
                         self.pointer = Some(p);
                     }
                     Err(e) => tracing::warn!("pointer: {e}"),
@@ -2361,6 +2394,46 @@ macro_rules! no_events {
             fn event(_: &mut Self, _: &$ty, _: <$ty as Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
         }
     )*};
+}
+
+no_events!(
+    ZwpPointerGesturesV1,
+    ZwpIdleInhibitManagerV1,
+    ZwpIdleInhibitorV1
+);
+
+impl Dispatch<ZwpPointerGesturePinchV1, ()> for Platform {
+    fn event(
+        state: &mut Self,
+        _: &ZwpPointerGesturePinchV1,
+        event: zwp_pointer_gesture_pinch_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        use zwp_pointer_gesture_pinch_v1::Event as E;
+        let Some(w) = state.pointer_focus else { return };
+        let pos = state.pointer_pos;
+        let (scale, phase) = match event {
+            E::Begin { .. } => {
+                state.pinch_scale = 1.0;
+                (1.0, Phase::Began)
+            }
+            E::Update { scale, .. } => {
+                // Wayland reports the scale since the start; events carry the change.
+                let step = if state.pinch_scale > 0.0 {
+                    scale / state.pinch_scale
+                } else {
+                    1.0
+                };
+                state.pinch_scale = scale;
+                (step as f32, Phase::Changed)
+            }
+            E::End { .. } => (1.0, Phase::Ended),
+            _ => return,
+        };
+        state.ui.magnify(w, pos, scale, phase);
+    }
 }
 
 no_events!(
