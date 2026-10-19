@@ -27,6 +27,12 @@ wayland-protocols = { version = "0.32", features = ["client", "staging", "unstab
 silica-protocols = { git = "https://github.com/silica-os/silica-desktop", rev = "084363dc6770dbdd1d2642f45c4b44f7361ac026", features = ["client"] }
 serde_json = "1"
 rustix = { version = "1", features = ["fs", "pipe"] }
+zbus = "5.19"
+serde = { version = "1", features = ["derive"] }
+futures-lite = "2"
+
+[dev-dependencies]
+async-io = "2"
 
 [lints]
 workspace = true

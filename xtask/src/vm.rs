@@ -31,7 +31,9 @@ fn work_dir() -> PathBuf {
     if let Some(dir) = std::env::var_os("SILICA_OS_DIR") {
         return PathBuf::from(dir);
     }
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
     home.join("build/silica-os-dev")
 }
 
@@ -138,7 +140,10 @@ pub fn vm(args: &[String]) -> Result<()> {
         }
         Some("stop") => stop(&example),
         Some("log") => {
-            print!("{}", ssh(&format!("cat {GUEST_DIR}/{example}.log 2>/dev/null"))?);
+            print!(
+                "{}",
+                ssh(&format!("cat {GUEST_DIR}/{example}.log 2>/dev/null"))?
+            );
             Ok(())
         }
         Some("shot") => {
@@ -160,7 +165,10 @@ pub fn vm(args: &[String]) -> Result<()> {
             let a: Vec<&str> = rest.iter().map(String::as_str).collect();
             cli(&a)
         }
-        _ => Err("usage: cargo xtask vm <run [EXAMPLE] [-- ARGS] | stop | log | shot PATH | cmd …>".into()),
+        _ => Err(
+            "usage: cargo xtask vm <run [EXAMPLE] [-- ARGS] | stop | log | shot PATH | cmd …>"
+                .into(),
+        ),
     }
 }
 
