@@ -93,6 +93,10 @@ pub fn make(kind: u32) -> Option<Box<dyn Widget>> {
         VETRO_KIND_TABLE => Box::new(TableView::new(Vec::new())),
         VETRO_KIND_OUTLINE => Box::new(TableView::outline(Vec::new())),
         VETRO_KIND_GRID_VIEW => Box::new(GridView::new(0, Box::new(|_, _| None))),
+        VETRO_KIND_TAB_VIEW => Box::new(crate::amalfi::tab_view::TabView::new(&[])),
+        VETRO_KIND_STATUS_ITEM => Box::new(crate::amalfi::statusbar::StatusItem::new(
+            crate::amalfi::statusbar::ItemContent::Glyph(String::new()),
+        )),
         _ => return None,
     })
 }
@@ -117,6 +121,7 @@ mod tests {
             VETRO_KIND_SIDEBAR_GROUP,
             VETRO_KIND_FORM,
             VETRO_KIND_FORM_ROW,
+            VETRO_KIND_TAB_VIEW,
         ];
         let mut missing = Vec::new();
         for (name, kind) in vetro_sys::KINDS {

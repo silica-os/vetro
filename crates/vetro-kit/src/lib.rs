@@ -483,6 +483,11 @@ impl View {
     pub fn new(kind: Kind) -> Result<View> {
         // SAFETY: plain value.
         let p = unsafe { f::vetro_view_new(kind.0) };
+        View::owned(p)
+    }
+
+    /// A handle owning the new reference `p` (null: the last error).
+    fn owned(p: *mut sys::VetroView) -> Result<View> {
         NonNull::new(p)
             .map(|ptr| View { ptr })
             .ok_or_else(last_error)
@@ -857,6 +862,91 @@ impl View {
         })
     }
 
+    /// Shows `content` in a popover against this view (`side`: `vetro_sys::VETRO_SIDE_*`,
+    /// flipped when it does not fit). `closed` runs when the user dismisses it.
+    pub fn present_popover(
+        &self,
+        content: &View,
+        side: u32,
+        closed: impl FnOnce() + 'static,
+    ) -> Result<Window> {
+        type Cb = Option<Box<dyn FnOnce()>>;
+        unsafe extern "C" fn call(user: *mut c_void) {
+            // SAFETY: a boxed `Cb` alive until destroy.
+            let c = unsafe { &mut *(user.cast::<Cb>()) };
+            if let Some(f) = c.take() {
+                f();
+            }
+        }
+        let data: Cb = Some(Box::new(closed));
+        // SAFETY: handles; the data is freed by `destroy::<Cb>` exactly once.
+        Window::from(unsafe {
+            f::vetro_view_present_popover(
+                self.as_ptr(),
+                content.as_ptr(),
+                side,
+                Some(call),
+                boxed(data),
+                Some(destroy::<Cb>),
+            )
+        })
+    }
+
+    /// An alert (`vetro_alert_new`): title, message, buttons in visual order, flags
+    /// (`vetro_sys::VETRO_ALERT_*`) and an optional symbol as its icon.
+    pub fn alert(
+        title: &str,
+        message: Option<&str>,
+        buttons: &[&str],
+        flags: u32,
+        icon: Option<&str>,
+    ) -> Result<View> {
+        let t = cstring(title)?;
+        let m = message.map(cstring).transpose()?;
+        let i = icon.map(cstring).transpose()?;
+        let owned: Vec<CString> = buttons.iter().map(|b| cstring(b)).collect::<Result<_>>()?;
+        let ptrs: Vec<*const c_char> = owned.iter().map(|c| c.as_ptr()).collect();
+        // SAFETY: strings alive for the call.
+        let p = unsafe {
+            f::vetro_alert_new(
+                t.as_ptr(),
+                m.as_ref().map_or(std::ptr::null(), |c| c.as_ptr()),
+                ptrs.as_ptr(),
+                ptrs.len(),
+                flags,
+                i.as_ref().map_or(std::ptr::null(), |c| c.as_ptr()),
+            )
+        };
+        View::owned(p)
+    }
+
+    /// Adds an accessory view to an alert, above its buttons.
+    pub fn add_accessory(&self, view: &View) -> Result<()> {
+        // SAFETY: handles.
+        check(unsafe { f::vetro_alert_add_accessory(self.as_ptr(), view.as_ptr()) })
+    }
+
+    /// A menu panel view of `menu` (consumed); `chosen` gets an item's id.
+    pub fn menu_view(menu: Menu, chosen: impl FnMut(u32) + 'static) -> Result<View> {
+        type Cb = Box<dyn FnMut(u32)>;
+        unsafe extern "C" fn call(id: u32, user: *mut c_void) {
+            // SAFETY: a boxed `Cb` alive until destroy.
+            let c = unsafe { &mut *(user.cast::<Cb>()) };
+            c(id);
+        }
+        let data: Cb = Box::new(chosen);
+        // SAFETY: the menu handle moves to libvetro; the data is freed by destroy once.
+        let p = unsafe {
+            f::vetro_menu_view_new(
+                menu.into_raw(),
+                Some(call),
+                boxed(data),
+                Some(destroy::<Cb>),
+            )
+        };
+        View::owned(p)
+    }
+
     /// Makes the rows, cells or tiles of a collection again (the data changed).
     pub fn reload(&self) -> Result<()> {
         // SAFETY: a handle.
@@ -1223,6 +1313,43 @@ impl Window {
         })
     }
 
+    /// Shows `alert` (made by [`View::alert`]) as a sheet of `parent`, or in a panel of
+    /// its own; `response` gets the button's index, or -1 for Escape, and the window
+    /// closes.
+    pub fn present_alert(
+        parent: Option<&Window>,
+        alert: &View,
+        response: impl FnOnce(i64) + 'static,
+    ) -> Result<Window> {
+        type Cb = Option<Box<dyn FnOnce(i64)>>;
+        unsafe extern "C" fn call(r: i64, user: *mut c_void) {
+            // SAFETY: a boxed `Cb` alive until destroy.
+            let c = unsafe { &mut *(user.cast::<Cb>()) };
+            if let Some(f) = c.take() {
+                f(r);
+            }
+        }
+        let data: Cb = Some(Box::new(response));
+        // SAFETY: handles; the data is freed by `destroy::<Cb>` exactly once.
+        Window::from(unsafe {
+            f::vetro_window_present_alert(
+                parent.map_or(std::ptr::null_mut(), |p| p.ptr.as_ptr()),
+                alert.as_ptr(),
+                Some(call),
+                boxed(data),
+                Some(destroy::<Cb>),
+            )
+        })
+    }
+
+    /// Gives the window an autosave name: its size and its identified views' state are
+    /// restored now and kept when it closes or the app quits.
+    pub fn set_autosave(&self, name: &str) -> Result<()> {
+        let n = cstring(name)?;
+        // SAFETY: a handle and a string alive for the call.
+        check(unsafe { f::vetro_window_set_autosave(self.ptr.as_ptr(), n.as_ptr()) })
+    }
+
     /// A sheet attached to `parent`.
     pub fn sheet(parent: Window, width: f32, height: f32) -> Result<Window> {
         // SAFETY: a handle and plain values.
@@ -1352,6 +1479,32 @@ impl Window {
 #[derive(Debug)]
 pub struct Menu {
     ptr: *mut sys::VetroMenu,
+}
+
+/// Alert flags (`View::alert`).
+pub mod alert_flags {
+    use vetro_sys as sys;
+    /// A warning badge on the icon.
+    pub const CRITICAL: u32 = sys::VETRO_ALERT_CRITICAL;
+    /// The glass panel.
+    pub const GLASS: u32 = sys::VETRO_ALERT_GLASS;
+    /// Buttons in a column (the first is the default).
+    pub const STACKED: u32 = sys::VETRO_ALERT_STACKED;
+    /// The default button is destructive.
+    pub const DESTRUCTIVE: u32 = sys::VETRO_ALERT_DESTRUCTIVE;
+}
+
+/// Where a popover sits against its anchor (`View::present_popover`).
+pub mod side {
+    use vetro_sys as sys;
+    /// Below.
+    pub const BELOW: u32 = sys::VETRO_SIDE_BELOW;
+    /// Above.
+    pub const ABOVE: u32 = sys::VETRO_SIDE_ABOVE;
+    /// After (right).
+    pub const AFTER: u32 = sys::VETRO_SIDE_AFTER;
+    /// Before (left).
+    pub const BEFORE: u32 = sys::VETRO_SIDE_BEFORE;
 }
 
 /// Menu item flags.
@@ -1524,5 +1677,78 @@ mod tests {
         set_menu_bar(vec![menu], |_| {}).unwrap();
         w.close().unwrap();
         assert_eq!(b.set_bool(Prop::HIDDEN, true), Err(Error::NoSuchObject));
+    }
+
+    #[test]
+    fn alerts_popovers_menus_tabs_and_status_items() {
+        let _h = Headless::new().unwrap();
+        let w = Window::new(500.0, 400.0).unwrap();
+        let col = View::new(Kind::COLUMN).unwrap();
+        w.set_content(&col).unwrap();
+        w.show().unwrap();
+        // An alert as a sheet: the response comes from a button.
+        let a = View::alert(
+            "Delete the file?",
+            Some("It cannot be undone."),
+            &["Cancel", "Delete"],
+            sys::VETRO_ALERT_DESTRUCTIVE,
+            Some("trash"),
+        )
+        .unwrap();
+        let check = View::new(Kind::CHECKBOX).unwrap();
+        check.set_str(Prop::TITLE, "Do not ask again").unwrap();
+        a.add_accessory(&check).unwrap();
+        let got: Shared<i64> = Rc::new(RefCell::new(99));
+        let g2 = got.clone();
+        let sheet = Window::present_alert(Some(&w), &a, move |r| *g2.borrow_mut() = r).unwrap();
+        let png = sheet.snapshot_png(1.0).unwrap();
+        assert!(png.len() > 100);
+        let delete = a.find("Delete").unwrap();
+        delete.perform(sys::VETRO_ACTION_CLICK).unwrap();
+        assert_eq!(*got.borrow(), 1);
+        assert_eq!(sheet.show(), Err(Error::NoSuchObject), "closed");
+        // A popover against a button.
+        let b = View::new(Kind::PUSH_BUTTON).unwrap();
+        b.set_str(Prop::TITLE, "Info").unwrap();
+        col.add(&b).unwrap();
+        w.snapshot_png(1.0).unwrap();
+        let content = View::new(Kind::LABEL).unwrap();
+        content.set_str(Prop::TEXT, "Details").unwrap();
+        let pop = b
+            .present_popover(&content, sys::VETRO_SIDE_BELOW, || {})
+            .unwrap();
+        assert!(pop.snapshot_png(1.0).unwrap().len() > 100);
+        pop.close().unwrap();
+        // A menu as a view.
+        let menu = Menu::new("", None)
+            .unwrap()
+            .item("Open", Some("cmd+o"), 7, 0)
+            .unwrap()
+            .separator()
+            .unwrap()
+            .item("Close", None, 8, 0)
+            .unwrap();
+        let chosen: Shared<u32> = Rc::default();
+        let c2 = chosen.clone();
+        let mv = View::menu_view(menu, move |id| *c2.borrow_mut() = id).unwrap();
+        col.add(&mv).unwrap();
+        w.snapshot_png(1.0).unwrap();
+        let rows = mv.children();
+        assert_eq!(rows.len(), 3);
+        rows[2].perform(sys::VETRO_ACTION_CLICK).unwrap();
+        assert_eq!(*chosen.borrow(), 8);
+        // Tabs and a status item made by kind.
+        let tabs = View::new(Kind::TAB_VIEW).unwrap();
+        tabs.set_strings(Prop::ITEMS, &["One", "Two"]).unwrap();
+        tabs.set_int(Prop::SELECTED_INDEX, 1).unwrap();
+        assert_eq!(tabs.get_int(Prop::SELECTED_INDEX).unwrap(), 1);
+        let item = View::new(Kind::STATUS_ITEM).unwrap();
+        item.set_int(Prop::STYLE, 2).unwrap();
+        item.set_str(Prop::SYMBOL, "battery-75").unwrap();
+        item.set_str(Prop::TEXT, "84%").unwrap();
+        assert_eq!(item.get_str(Prop::TEXT).unwrap(), "84%");
+        col.add(&item).unwrap();
+        w.snapshot_png(1.0).unwrap();
+        w.close().unwrap();
     }
 }

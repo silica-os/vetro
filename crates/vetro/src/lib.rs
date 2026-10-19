@@ -40,9 +40,9 @@ use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
 pub use element::{
-    Animation, Component, Element, Handler, IntoChildren, Key, MenuEntry, PValue, Transition,
-    button, collection, column, component, custom, for_each, grid, group, host, label, list,
-    outline, overlay, row, spacer, symbol, table, text_view, view,
+    AlertSpec, Animation, Component, Element, Handler, IntoChildren, Key, MenuEntry, PValue,
+    Transition, button, collection, column, component, custom, for_each, grid, group, host, label,
+    list, outline, overlay, row, spacer, symbol, table, tabs, text_view, view,
 };
 pub use vetro_kit as kit;
 pub use vetro_kit::Column;
@@ -51,9 +51,9 @@ pub use vetro_kit::Column;
 pub mod prelude {
     pub use crate::controls::*;
     pub use crate::{
-        Animation, Binding, Column, Component, Cx, Element, MenuEntry, Model, State, Transition,
-        button, collection, column, component, custom, for_each, grid, group, host, label, list,
-        outline, overlay, row, spacer, symbol, table, text_view, view,
+        AlertSpec, Animation, Binding, Column, Component, Cx, Element, MenuEntry, Model, State,
+        Transition, button, collection, column, component, custom, for_each, grid, group, host,
+        label, list, outline, overlay, row, spacer, symbol, table, tabs, text_view, view,
     };
     pub use vetro_kit::{Color, Signal, Value, rgba};
 }
@@ -401,6 +401,68 @@ pub fn window<C: Component>(
     let root = mount(host, make);
     w.show()?;
     Ok(root)
+}
+
+/// How a window opens: title, size, size limits, autosave name.
+#[derive(Debug, Clone, Default)]
+pub struct WindowSpec {
+    title: String,
+    size: (f32, f32),
+    min: Option<(f32, f32)>,
+    max: Option<(f32, f32)>,
+    autosave: Option<String>,
+}
+
+impl WindowSpec {
+    /// A window of `size`.
+    pub fn new(title: &str, size: (f32, f32)) -> WindowSpec {
+        WindowSpec {
+            title: title.to_string(),
+            size,
+            ..WindowSpec::default()
+        }
+    }
+
+    /// The smallest it gets.
+    pub fn min_size(mut self, w: f32, h: f32) -> Self {
+        self.min = Some((w, h));
+        self
+    }
+
+    /// The largest it gets (min = max: a fixed size, the zoom button disabled).
+    pub fn max_size(mut self, w: f32, h: f32) -> Self {
+        self.max = Some((w, h));
+        self
+    }
+
+    /// Keeps its size and its identified views' state (column widths, sort, expanded
+    /// nodes, split positions) under `name` between runs.
+    pub fn autosave(mut self, name: &str) -> Self {
+        self.autosave = Some(name.to_string());
+        self
+    }
+
+    /// Opens it with the component `make` builds.
+    pub fn open<C: Component>(self, make: impl Fn() -> C + 'static) -> vetro_kit::Result<Root> {
+        let w = vetro_kit::Window::new(self.size.0, self.size.1)?;
+        w.set_title(&self.title)?;
+        if self.min.is_some() || self.max.is_some() {
+            w.set_size_limits(
+                self.min.unwrap_or((0.0, 0.0)),
+                self.max.unwrap_or((0.0, 0.0)),
+            )?;
+        }
+        let host = vetro_kit::View::new(vetro_kit::Kind::VIEW)?;
+        host.set_float(vetro_kit::Prop::MAX_WIDTH, f64::INFINITY)?;
+        host.set_float(vetro_kit::Prop::MAX_HEIGHT, f64::INFINITY)?;
+        w.set_content(&host)?;
+        let root = mount(host, make);
+        if let Some(name) = &self.autosave {
+            w.set_autosave(name)?;
+        }
+        w.show()?;
+        Ok(root)
+    }
 }
 
 /// Renders a component headlessly at `size` and returns a PNG at `scale` (the preview

@@ -252,6 +252,9 @@ pub type VetroTreeChildFn =
 /// Whether an outline node can be expanded (1) or not (0).
 pub type VetroTreeExpandableFn = Option<unsafe extern "C" fn(node: u64, user: *mut c_void) -> u8>;
 
+/// An alert's response: the index of the button pressed, or -1 (Escape).
+pub type VetroAlertFn = Option<unsafe extern "C" fn(response: i64, user: *mut c_void)>;
+
 /// The invisible root of an outline's tree.
 pub const VETRO_OUTLINE_ROOT: u64 = u64::MAX;
 
@@ -324,6 +327,14 @@ ids! { KINDS,
     VETRO_KIND_FORM = 45, VETRO_KIND_FORM_ROW = 46, VETRO_KIND_TITLE_BAR = 47,
     VETRO_KIND_TAB_BAR = 48, VETRO_KIND_TAB = 49, VETRO_KIND_STATUS_BAR = 50, VETRO_KIND_TEXT = 51,
     VETRO_KIND_TABLE = 52, VETRO_KIND_OUTLINE = 53, VETRO_KIND_GRID_VIEW = 54,
+    VETRO_KIND_TAB_VIEW = 55, VETRO_KIND_STATUS_ITEM = 56,
+}
+
+// Alert flags and popover sides.
+ids! { PANEL_IDS,
+    VETRO_ALERT_CRITICAL = 1, VETRO_ALERT_GLASS = 2, VETRO_ALERT_STACKED = 4,
+    VETRO_ALERT_DESTRUCTIVE = 8,
+    VETRO_SIDE_BELOW = 0, VETRO_SIDE_ABOVE = 1, VETRO_SIDE_AFTER = 2, VETRO_SIDE_BEFORE = 3,
 }
 
 // Table column flags.
@@ -461,6 +472,13 @@ macro_rules! for_each_function {
             fn vetro_outline_set_tree(view: *mut $crate::VetroView, row_height: f32, count: $crate::VetroTreeCountFn, child: $crate::VetroTreeChildFn, expandable: $crate::VetroTreeExpandableFn, provider: $crate::VetroCellFn, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> $crate::VetroStatus;
             fn vetro_grid_set_items(view: *mut $crate::VetroView, count: u64, tile_width: f32, tile_height: f32, provider: $crate::VetroRowFn, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> $crate::VetroStatus;
             fn vetro_collection_reload(view: *mut $crate::VetroView) -> $crate::VetroStatus;
+            // Alerts, popovers, menu views, window state.
+            fn vetro_alert_new(title: *const ::std::ffi::c_char, message: *const ::std::ffi::c_char, buttons: *const *const ::std::ffi::c_char, count: usize, flags: u32, icon: *const ::std::ffi::c_char) -> *mut $crate::VetroView;
+            fn vetro_alert_add_accessory(alert: *mut $crate::VetroView, view: *mut $crate::VetroView) -> $crate::VetroStatus;
+            fn vetro_window_present_alert(parent: *mut $crate::VetroWindow, alert: *mut $crate::VetroView, callback: $crate::VetroAlertFn, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> *mut $crate::VetroWindow;
+            fn vetro_view_present_popover(anchor: *mut $crate::VetroView, content: *mut $crate::VetroView, side: u32, closed: $crate::VetroCallback, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> *mut $crate::VetroWindow;
+            fn vetro_menu_view_new(menu: *mut $crate::VetroMenu, callback: $crate::VetroMenuFn, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> *mut $crate::VetroView;
+            fn vetro_window_set_autosave(window: *mut $crate::VetroWindow, name: *const ::std::ffi::c_char) -> $crate::VetroStatus;
         }
     };
 }

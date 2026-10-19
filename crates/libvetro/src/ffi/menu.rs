@@ -23,6 +23,11 @@ fn building<'a>(m: *mut VetroMenu) -> Option<&'a mut Building> {
     }
 }
 
+/// Takes a built menu back (consumes the handle).
+pub(super) fn take_menu(m: *mut VetroMenu) -> Option<Menu> {
+    take(m).map(|b| b.menu)
+}
+
 fn take(m: *mut VetroMenu) -> Option<Box<Building>> {
     if m.is_null() {
         None

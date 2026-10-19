@@ -106,6 +106,32 @@ pub enum WindowKind {
     },
 }
 
+impl Window {
+    /// `size` within the window's minimum and maximum sizes (silica-desktop#245): what the
+    /// window is laid out at whatever the compositor or the app asked for.
+    pub fn clamp_size(&self, size: Size) -> Size {
+        let mut s = size;
+        if let Some(min) = self.min_size {
+            s.width = s.width.max(min.width);
+            s.height = s.height.max(min.height);
+        }
+        if let Some(max) = self.max_size {
+            if max.width > 0.0 {
+                s.width = s.width.min(max.width);
+            }
+            if max.height > 0.0 {
+                s.height = s.height.min(max.height);
+            }
+        }
+        s
+    }
+
+    /// Whether the user can resize it (it has no fixed size: minimum = maximum).
+    pub fn is_resizable(&self) -> bool {
+        self.resizable && !matches!((self.min_size, self.max_size), (Some(a), Some(b)) if a == b)
+    }
+}
+
 impl WindowKind {
     /// The parent of a transient window.
     pub fn parent(&self) -> Option<WindowId> {
@@ -141,6 +167,16 @@ pub struct Window {
     pub full_size_content: bool,
     /// The view with the keyboard focus.
     pub focus: Option<ViewId>,
+    /// The autosave name: the window's state is kept under it (`core::restore`).
+    pub autosave: Option<String>,
+    /// Saved state of views not restored yet (they have not appeared).
+    pub restore: std::collections::HashMap<
+        String,
+        Vec<(crate::core::value::Prop, crate::core::value::Value)>,
+    >,
+    /// Where keys go without a focus: the parent of a focused view that was hidden (a tab
+    /// switched away), so its containers still get the keys.
+    pub key_anchor: Option<ViewId>,
     /// Views under the pointer, outermost first.
     pub hover: Vec<ViewId>,
     /// The view that took the press.
@@ -191,6 +227,9 @@ impl Window {
             resizable: true,
             full_size_content: false,
             focus: None,
+            key_anchor: None,
+            autosave: None,
+            restore: std::collections::HashMap::new(),
             hover: Vec::new(),
             capture: None,
             pointer: None,

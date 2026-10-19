@@ -17,6 +17,7 @@ mod canvas;
 mod collections;
 mod kinds;
 mod menu;
+mod panels;
 
 use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, c_char, c_void};
@@ -1489,6 +1490,7 @@ use canvas::*;
 #[allow(unused_imports)]
 use collections::*;
 use menu::*;
+use panels::*;
 
 vetro_sys::for_each_function!(check_signatures);
 

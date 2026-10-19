@@ -212,6 +212,58 @@ impl RowsLayout {
     }
 }
 
+/// An alert presented from a view.
+#[derive(Clone)]
+pub struct AlertSpec {
+    /// Title.
+    pub title: String,
+    /// Message under it.
+    pub message: Option<String>,
+    /// Buttons in visual order (the last is the default).
+    pub buttons: Vec<String>,
+    /// The default button is destructive.
+    pub destructive: bool,
+    /// A symbol as the alert's icon.
+    pub icon: Option<String>,
+    /// Gets the index of the button pressed, or -1 (Escape).
+    pub response: Rc<dyn Fn(i64)>,
+}
+
+impl AlertSpec {
+    /// An alert with a title and buttons; `response` gets the button's index (-1: Escape).
+    pub fn new(title: &str, buttons: &[&str], response: impl Fn(i64) + 'static) -> AlertSpec {
+        AlertSpec {
+            title: title.to_string(),
+            message: None,
+            buttons: buttons.iter().map(|b| b.to_string()).collect(),
+            destructive: false,
+            icon: None,
+            response: Rc::new(response),
+        }
+    }
+
+    /// With a message.
+    pub fn message(mut self, m: &str) -> Self {
+        self.message = Some(m.to_string());
+        self
+    }
+
+    /// The default button is destructive.
+    pub fn destructive(mut self) -> Self {
+        self.destructive = true;
+        self
+    }
+
+    /// A symbol as the icon.
+    pub fn icon(mut self, symbol: &str) -> Self {
+        self.icon = Some(symbol.to_string());
+        self
+    }
+}
+
+/// An element's alert: presented, what it shows, what dismissing it does.
+pub(crate) type AlertEffect = (bool, AlertSpec, Rc<dyn Fn()>);
+
 /// The items of a virtualised collection: `cell(key, column)` builds an item's element.
 #[derive(Clone)]
 pub(crate) struct Rows {
@@ -228,6 +280,7 @@ pub(crate) struct Effects {
     pub(crate) rows: Option<Rows>,
     pub(crate) sheet: Option<Presentation>,
     pub(crate) popover: Option<Presentation>,
+    pub(crate) alert: Option<AlertEffect>,
 }
 
 /// An element: a view to make, its properties, handlers and children.
@@ -352,6 +405,22 @@ impl Element {
                 f(n, e != 0);
             }
         })
+    }
+
+    /// Runs `f` with a tab's index when its × is clicked (tabs).
+    pub fn on_close_tab(self, f: impl Fn(usize) + 'static) -> Self {
+        self.on(Signal::CLOSE_REQUESTED, move |v| {
+            if let Value::Int(i) = v
+                && let Ok(i) = usize::try_from(*i)
+            {
+                f(i);
+            }
+        })
+    }
+
+    /// Runs `f` when the new-tab button is clicked (tabs).
+    pub fn on_new_tab(self, f: impl Fn() + 'static) -> Self {
+        self.on(Signal::ACTIVATED, move |_| f())
     }
 
     /// Alternating row backgrounds (tables).
@@ -606,6 +675,14 @@ impl Element {
         self
     }
 
+    /// Presents `alert` as a sheet of this view's window while `presented` is true; a
+    /// button (or Escape) dismisses it, sets `presented` to false and calls its response.
+    pub fn alert(mut self, presented: &crate::Binding<bool>, alert: AlertSpec) -> Self {
+        let b = presented.clone();
+        self.effects.alert = Some((presented.get(), alert, Rc::new(move || b.set(false))));
+        self
+    }
+
     /// Adds children.
     pub fn children(mut self, children: impl IntoChildren) -> Self {
         self.children.extend(children.into_children());
@@ -819,6 +896,29 @@ pub fn list(count: usize, row_height: f32, row: impl Fn(usize) -> Element + 'sta
         cell: Rc::new(move |k, _| row(usize::try_from(k).unwrap_or(usize::MAX))),
     });
     e
+}
+
+/// Window tabs: the children are the tabs' contents, `titles` their titles; the kit's tab
+/// bar shows while there are two tabs or more, and the tab picked goes to `selected`.
+/// See [`Element::on_close_tab`] and [`Element::on_new_tab`].
+pub fn tabs(
+    titles: &[&str],
+    selected: &crate::Binding<usize>,
+    children: impl IntoChildren,
+) -> Element {
+    let b = selected.clone();
+    let titles: Vec<String> = titles.iter().map(|t| t.to_string()).collect();
+    Element::of(Kind::TAB_VIEW)
+        .prop(Prop::ITEMS, PValue::Strings(titles.into()))
+        .prop(Prop::SELECTED_INDEX, PValue::Int(selected.get() as i64))
+        .on(Signal::VALUE_CHANGED, move |v| {
+            if let Value::Int(i) = v
+                && let Ok(i) = usize::try_from(*i)
+            {
+                b.set(i);
+            }
+        })
+        .children(children)
 }
 
 /// A virtualised table of `rows` rows under `columns`: `cell(row, column)` builds a cell's

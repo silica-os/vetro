@@ -72,6 +72,8 @@ use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_manager_v3::Z
 use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3::{self, ZwpTextInputV3};
 use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
+use wayland_protocols::xdg::dialog::v1::client::xdg_dialog_v1::XdgDialogV1;
+use wayland_protocols::xdg::dialog::v1::client::xdg_wm_dialog_v1::XdgWmDialogV1;
 use wayland_protocols::xdg::shell::client::xdg_positioner;
 
 use silica_protocols::glass::client::silica_glass_manager_v1::SilicaGlassManagerV1;
@@ -126,6 +128,8 @@ struct Surface {
     gl: Option<crate::render::gl::GlWindow>,
     vkw: Option<crate::render::vulkan::VkWindow>,
     silica_window: Option<SilicaWindowV1>,
+    /// The modal dialog object of a sheet.
+    dialog: Option<XdgDialogV1>,
     glass: Option<SilicaGlassV1>,
     glass_sent: Vec<GlassRegion>,
     last_frame: Instant,
@@ -277,6 +281,8 @@ pub struct Platform {
     lock: Option<SessionLock>,
     fractional: Option<WpFractionalScaleManagerV1>,
     viewporter: Option<WpViewporter>,
+    /// xdg-dialog: sheets are modal dialogs of their parent (Ossido places them).
+    dialogs: Option<XdgWmDialogV1>,
     cursor_shapes: Option<CursorShapeManager>,
     text_input_manager: Option<ZwpTextInputManagerV3>,
     data_devices: Option<DataDeviceManagerState>,
@@ -479,6 +485,9 @@ pub fn run_with(
     });
     platform.a11y = Some(crate::platform::a11y::Accessibility::new(ping));
     platform.app_id = app_id.to_string();
+    platform
+        .ui
+        .set_state_dir(crate::core::restore::state_dir(app_id));
     setup(&mut platform.ui);
     platform.process();
     let _keep = (appearance_sub, repeat_sub);
@@ -514,6 +523,7 @@ impl Platform {
             lock: None,
             fractional: globals.bind(&qh, 1..=1, ()).ok(),
             viewporter: globals.bind(&qh, 1..=1, ()).ok(),
+            dialogs: globals.bind(&qh, 1..=1, ()).ok(),
             cursor_shapes: CursorShapeManager::bind(globals, &qh).ok(),
             text_input_manager: globals.bind(&qh, 1..=1, ()).ok(),
             data_devices: DataDeviceManagerState::bind(globals, &qh).ok(),
@@ -649,6 +659,12 @@ impl Platform {
                 }
             }
             Request::Resize(id, size) => {
+                let size = self.ui.window(id).map_or(size, |w| match w.kind {
+                    WindowKind::Normal | WindowKind::Panel | WindowKind::Sheet { .. } => {
+                        w.clamp_size(size)
+                    }
+                    _ => size,
+                });
                 if let Some(s) = self.surface_mut(id) {
                     s.size = size;
                     s.wants_frame = true;
@@ -688,7 +704,10 @@ impl Platform {
                 let _ = std::process::Command::new("xdg-open").arg(uri).spawn();
             }
             Request::Beep => {}
-            Request::Quit => self.exit = true,
+            Request::Quit => {
+                self.ui.save_window_states();
+                self.exit = true;
+            }
             Request::StartMove(id) => {
                 if let (Some(Role::Toplevel(w)), Some(seat)) =
                     (self.surface(id).map(|s| &s.role), &self.seat)
@@ -733,13 +752,20 @@ impl Platform {
             .as_ref()
             .map(|v| v.get_viewport(&wl, &self.qh, ()));
         let size = win.size;
+        let mut sheet_dialog = None;
         let role = match &win.kind {
             WindowKind::Normal | WindowKind::Panel | WindowKind::Sheet { .. } => {
                 let Some(xdg) = &self.xdg else {
                     tracing::error!("no xdg_wm_base: cannot show a window");
                     return;
                 };
-                let w = xdg.create_window(wl, WindowDecorations::RequestServer, &self.qh);
+                // A sheet has no title bar: Ossido draws it as a card over its parent.
+                let decorations = if matches!(win.kind, WindowKind::Sheet { .. }) {
+                    WindowDecorations::RequestClient
+                } else {
+                    WindowDecorations::RequestServer
+                };
+                let w = xdg.create_window(wl, decorations, &self.qh);
                 w.set_title(win.title.clone());
                 w.set_app_id(self.app_id.clone());
                 if let Some(min) = win.min_size {
@@ -752,6 +778,13 @@ impl Platform {
                     && let Some(Role::Toplevel(p)) = self.surface(parent).map(|s| &s.role)
                 {
                     w.set_parent(Some(p));
+                    // A sheet is a modal dialog of its parent: Ossido centres it on the
+                    // parent and keeps the parent from taking input.
+                    if let Some(d) = &self.dialogs {
+                        let dialog = d.get_xdg_dialog(w.xdg_toplevel(), &self.qh, ());
+                        dialog.set_modal();
+                        sheet_dialog = Some(dialog);
+                    }
                 }
                 w.commit();
                 Role::Toplevel(w)
@@ -903,6 +936,7 @@ impl Platform {
             gl: None,
             vkw: None,
             silica_window,
+            dialog: sheet_dialog,
             glass,
             glass_sent: Vec::new(),
             last_frame: Instant::now(),
@@ -927,6 +961,9 @@ impl Platform {
             if let (Some(ctx), Some(w)) = (self.vk.as_mut(), s.vkw) {
                 ctx.destroy_window(w);
             }
+            if let Some(d) = s.dialog {
+                d.destroy();
+            }
             if let Some(w) = s.silica_window {
                 w.destroy();
             }
@@ -944,6 +981,19 @@ impl Platform {
     }
 
     fn configured(&mut self, id: WindowId, size: Option<Size>) {
+        // A toplevel's configured size stays within its limits (#245).
+        let size = match (size, self.ui.window(id)) {
+            (Some(sz), Some(w))
+                if !sz.is_empty()
+                    && matches!(
+                        w.kind,
+                        WindowKind::Normal | WindowKind::Panel | WindowKind::Sheet { .. }
+                    ) =>
+            {
+                Some(w.clamp_size(sz))
+            }
+            (s, _) => s,
+        };
         let (scale, size) = match self.surface_mut(id) {
             Some(s) => {
                 if let Some(sz) = size.filter(|z| !z.is_empty()) {
@@ -2397,6 +2447,8 @@ macro_rules! no_events {
 }
 
 no_events!(
+    XdgWmDialogV1,
+    XdgDialogV1,
     ZwpPointerGesturesV1,
     ZwpIdleInhibitManagerV1,
     ZwpIdleInhibitorV1

@@ -346,3 +346,51 @@ fn tables_outlines_and_collections_build_their_items() {
     assert_eq!(grid.get_int(Prop::COLUMNS).unwrap(), 4);
     assert_eq!(sorted.get(), 7);
 }
+
+struct Outer {
+    flag: crate::Model<bool>,
+}
+
+impl Component for Outer {
+    fn body(&self, cx: &mut Cx) -> Element {
+        cx.watch(&self.flag);
+        let f = self.flag.get();
+        column((
+            label(if f { "on" } else { "off" }),
+            crate::component(Collections {
+                sorted: Rc::new(Cell::new(0)),
+            }),
+        ))
+        .fill()
+    }
+}
+
+#[test]
+fn collections_keep_their_state_across_renders() {
+    let rt = Headless::new().unwrap();
+    let flag = crate::Model::new(false);
+    let f2 = flag.clone();
+    let w = vetro_kit::Window::new(500.0, 700.0).unwrap();
+    let h = vetro_kit::View::new(vetro_kit::Kind::VIEW).unwrap();
+    h.set_float(Prop::MAX_WIDTH, f64::INFINITY).unwrap();
+    h.set_float(Prop::MAX_HEIGHT, f64::INFINITY).unwrap();
+    w.set_content(&h).unwrap();
+    w.show().unwrap();
+    let root = mount(h, move || Outer { flag: f2.clone() });
+    w.snapshot_png(1.0).unwrap();
+    let host = root.host();
+    let outline = host.find("outline").unwrap();
+    outline.set_ints(Prop::EXPANDED_ITEMS, &[1]).unwrap();
+    let grid = host.find("grid").unwrap();
+    grid.set_point(Prop::SCROLL_OFFSET, 0.0, 120.0).unwrap();
+    w.snapshot_png(1.0).unwrap();
+    assert!(host.find("o10").is_some());
+    flag.update(|f| *f = true);
+    rt.advance(0.01);
+    w.snapshot_png(1.0).unwrap();
+    assert_eq!(host.find("outline").unwrap(), outline, "the same view");
+    assert!(host.find("o10").is_some(), "still expanded");
+    assert_eq!(outline.get_ints(Prop::EXPANDED_ITEMS).unwrap(), vec![1]);
+    let g = host.find("grid").unwrap();
+    assert_eq!(g, grid);
+}

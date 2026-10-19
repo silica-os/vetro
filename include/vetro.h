@@ -68,6 +68,7 @@ typedef VetroView *(*VetroCellFn)(uint64_t key, uint32_t column, void *user);
 typedef uint64_t (*VetroTreeCountFn)(uint64_t parent, void *user);
 typedef uint64_t (*VetroTreeChildFn)(uint64_t parent, uint64_t index, void *user);
 typedef uint8_t (*VetroTreeExpandableFn)(uint64_t node, void *user);
+typedef void (*VetroAlertFn)(int64_t response, void *user);
 
 #define VETRO_OUTLINE_ROOT UINT64_MAX
 
@@ -313,6 +314,8 @@ typedef uint8_t (*VetroTreeExpandableFn)(uint64_t node, void *user);
 #define VETRO_KIND_TABLE 52u
 #define VETRO_KIND_OUTLINE 53u
 #define VETRO_KIND_GRID_VIEW 54u
+#define VETRO_KIND_TAB_VIEW 55u
+#define VETRO_KIND_STATUS_ITEM 56u
 
 /* Window kinds. */
 #define VETRO_WINDOW_NORMAL 1u
@@ -346,6 +349,16 @@ typedef uint8_t (*VetroTreeExpandableFn)(uint64_t node, void *user);
 #define VETRO_COLUMN_FIXED_WIDTH 4u
 #define VETRO_COLUMN_ALIGN_CENTER 8u
 #define VETRO_COLUMN_ALIGN_TRAILING 16u
+
+/* Alert flags and popover sides. */
+#define VETRO_ALERT_CRITICAL 1u
+#define VETRO_ALERT_GLASS 2u
+#define VETRO_ALERT_STACKED 4u
+#define VETRO_ALERT_DESTRUCTIVE 8u
+#define VETRO_SIDE_BELOW 0u
+#define VETRO_SIDE_ABOVE 1u
+#define VETRO_SIDE_AFTER 2u
+#define VETRO_SIDE_BEFORE 3u
 
 uint32_t vetro_abi_version(void);
 VetroStatus vetro_last_status(void);
@@ -435,6 +448,12 @@ VetroStatus vetro_table_set_cells(VetroView *view, uint64_t rows, float row_heig
 VetroStatus vetro_outline_set_tree(VetroView *view, float row_height, VetroTreeCountFn count, VetroTreeChildFn child, VetroTreeExpandableFn expandable, VetroCellFn provider, void *user, VetroDestroy destroy);
 VetroStatus vetro_grid_set_items(VetroView *view, uint64_t count, float tile_width, float tile_height, VetroRowFn provider, void *user, VetroDestroy destroy);
 VetroStatus vetro_collection_reload(VetroView *view);
+VetroView *vetro_alert_new(const char *title, const char *message, const char *const *buttons, size_t count, uint32_t flags, const char *icon);
+VetroStatus vetro_alert_add_accessory(VetroView *alert, VetroView *view);
+VetroWindow *vetro_window_present_alert(VetroWindow *parent, VetroView *alert, VetroAlertFn callback, void *user, VetroDestroy destroy);
+VetroWindow *vetro_view_present_popover(VetroView *anchor, VetroView *content, uint32_t side, VetroCallback closed, void *user, VetroDestroy destroy);
+VetroView *vetro_menu_view_new(VetroMenu *menu, VetroMenuFn callback, void *user, VetroDestroy destroy);
+VetroStatus vetro_window_set_autosave(VetroWindow *window, const char *name);
 
 #ifdef __cplusplus
 }

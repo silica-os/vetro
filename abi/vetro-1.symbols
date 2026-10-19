@@ -86,3 +86,9 @@ vetro_table_set_cells
 vetro_outline_set_tree
 vetro_grid_set_items
 vetro_collection_reload
+vetro_alert_new
+vetro_alert_add_accessory
+vetro_window_present_alert
+vetro_view_present_popover
+vetro_menu_view_new
+vetro_window_set_autosave

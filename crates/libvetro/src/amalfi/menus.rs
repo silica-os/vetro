@@ -390,6 +390,22 @@ impl Widget for MenuItem {
         a.selected = Some(self.checked).filter(|c| *c);
         a.actions = vec![Action::Click];
     }
+
+    fn event(&mut self, cx: &mut EventCx<'_>, event: &Event) -> Handled {
+        // A click from an assistive technology chooses the row as the menu would.
+        if *event == Event::Activate && self.selectable() {
+            let id = cx.id();
+            let ui = cx.ui();
+            if let Some(menu) = ui.tree.parent(id)
+                && let Some(i) = ui.tree.children(menu).iter().position(|c| *c == id)
+            {
+                ui.emit(menu, Signal::Activated, Value::Int(i as i64));
+                ui.emit(menu, Signal::SelectionChanged, Value::Int(i as i64));
+                return Handled::Yes;
+            }
+        }
+        Handled::No
+    }
 }
 
 /// The panel of a menu: `Glass/Thick`, radius 12, its rows (children) 4 in.

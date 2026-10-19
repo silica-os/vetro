@@ -163,6 +163,7 @@ typedef VetroView *(*VetroCellFn)(uint64_t key, uint32_t column, void *user);
 typedef uint64_t (*VetroTreeCountFn)(uint64_t parent, void *user);
 typedef uint64_t (*VetroTreeChildFn)(uint64_t parent, uint64_t index, void *user);
 typedef uint8_t (*VetroTreeExpandableFn)(uint64_t node, void *user);
+typedef void (*VetroAlertFn)(int64_t response, void *user);
 
 #define VETRO_OUTLINE_ROOT UINT64_MAX
 "#;
@@ -185,7 +186,7 @@ pub fn header_text() -> String {
         let _ = writeln!(h, "#define {name} ({v})");
     }
     h.push('\n');
-    let groups: [(&str, &[(&str, u32)]); 11] = [
+    let groups: [(&str, &[(&str, u32)]); 12] = [
         ("Accessibility actions", vetro_sys::ACTIONS),
         ("Value kinds", vetro_sys::VALUE_KINDS),
         ("Events, modifiers and keys", vetro_sys::EVENT_IDS),
@@ -196,6 +197,7 @@ pub fn header_text() -> String {
         ("Shell layers, edges and keyboard modes", vetro_sys::LAYERS),
         ("Menu flags and pop-up kinds", vetro_sys::MENU_FLAGS),
         ("Table column flags", vetro_sys::COLUMN_FLAGS),
+        ("Alert flags and popover sides", vetro_sys::PANEL_IDS),
         ("(end)", &[]),
     ];
     for (title, list) in groups {

@@ -11,6 +11,7 @@ pub mod event;
 pub mod inspect;
 pub mod layout;
 pub mod menu;
+pub mod restore;
 pub mod tree;
 pub mod ui;
 pub mod value;

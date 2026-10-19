@@ -98,6 +98,19 @@ impl StatusItem {
         self
     }
 
+    /// The glyph and the text of the content (empty where it has none).
+    fn parts(&self) -> (String, String) {
+        match &self.content {
+            ItemContent::Glyph(g) => (g.clone(), String::new()),
+            ItemContent::Clock(t) => (String::new(), t.clone()),
+            ItemContent::Battery {
+                symbol,
+                percentage: t,
+            }
+            | ItemContent::InputSource { symbol, label: t } => (symbol.clone(), t.clone()),
+        }
+    }
+
     fn ink(&self, theme: &Theme) -> Color {
         if self.on_dark {
             Theme::dark_theme().colors.text_primary
@@ -258,6 +271,45 @@ impl Widget for StatusItem {
                     PropChange::Nothing
                 })
             }
+            // The content through the ABI: its kind (`Style`: 0 glyph, 1 clock, 2 battery,
+            // 3 input source), its glyph (`Symbol`) and its text (`Text`).
+            Prop::Style => match value.as_int() {
+                Some(k @ 0..=3) => {
+                    let (symbol, text) = self.parts();
+                    self.content = match k {
+                        0 => ItemContent::Glyph(symbol),
+                        1 => ItemContent::Clock(text),
+                        2 => ItemContent::Battery {
+                            symbol,
+                            percentage: text,
+                        },
+                        _ => ItemContent::InputSource {
+                            symbol,
+                            label: text,
+                        },
+                    };
+                    PropChange::Layout
+                }
+                _ => PropChange::Unknown,
+            },
+            Prop::Symbol => value.as_str().map_or(PropChange::Unknown, |s| {
+                match &mut self.content {
+                    ItemContent::Glyph(g) => *g = s.to_string(),
+                    ItemContent::Battery { symbol, .. }
+                    | ItemContent::InputSource { symbol, .. } => *symbol = s.to_string(),
+                    ItemContent::Clock(_) => return PropChange::Nothing,
+                }
+                PropChange::Paint
+            }),
+            Prop::Text => value.as_str().map_or(PropChange::Unknown, |s| {
+                match &mut self.content {
+                    ItemContent::Clock(t)
+                    | ItemContent::Battery { percentage: t, .. }
+                    | ItemContent::InputSource { label: t, .. } => *t = s.to_string(),
+                    ItemContent::Glyph(_) => return PropChange::Nothing,
+                }
+                PropChange::Layout
+            }),
             _ => PropChange::Unknown,
         }
     }
@@ -266,6 +318,14 @@ impl Widget for StatusItem {
         match prop {
             Prop::Expanded => Some(Value::Bool(self.active)),
             Prop::Title => Some(Value::Str(self.title.clone())),
+            Prop::Style => Some(Value::Int(match self.content {
+                ItemContent::Glyph(_) => 0,
+                ItemContent::Clock(_) => 1,
+                ItemContent::Battery { .. } => 2,
+                ItemContent::InputSource { .. } => 3,
+            })),
+            Prop::Symbol => Some(Value::Str(self.parts().0)),
+            Prop::Text => Some(Value::Str(self.parts().1)),
             _ => None,
         }
     }

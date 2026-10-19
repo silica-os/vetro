@@ -227,6 +227,8 @@ pub struct Ui {
     pub(crate) app_handler: Option<crate::core::app::AppHandler>,
     /// The tooltip presenter.
     pub(crate) tooltips: crate::amalfi::tooltips::Presenter,
+    /// Where autosaved window states are kept (`core::restore`).
+    pub(crate) state_dir: Option<std::path::PathBuf>,
 }
 
 impl Default for Ui {
@@ -263,6 +265,7 @@ impl Ui {
             app_info: crate::core::app::AppInfo::default(),
             app_handler: None,
             tooltips: crate::amalfi::tooltips::Presenter::default(),
+            state_dir: None,
         }
     }
 
@@ -954,6 +957,7 @@ impl Ui {
         if pos >= self.windows.len() {
             return;
         }
+        self.save_window_state(window);
         let w = self.windows.remove(pos);
         self.destroy(w.root);
         self.requests.push(Request::CloseWindow(window));
@@ -993,6 +997,11 @@ impl Ui {
         } else {
             1.0
         };
+        // Kinds the compositor sizes itself (popups, shell surfaces) are taken as given.
+        let size = match w.kind {
+            WindowKind::Normal | WindowKind::Panel | WindowKind::Sheet { .. } => w.clamp_size(size),
+            _ => size,
+        };
         if w.size == size && w.scale == scale {
             return;
         }
@@ -1010,11 +1019,19 @@ impl Ui {
 
     /// Sets the minimum and maximum size.
     pub fn set_size_limits(&mut self, window: WindowId, min: Option<Size>, max: Option<Size>) {
-        if let Some(w) = self.window_mut(window) {
+        let clamped = self.window_mut(window).map(|w| {
             w.min_size = min;
             w.max_size = max;
-        }
+            (w.size, w.clamp_size(w.size), w.scale)
+        });
         self.requests.push(Request::SetSizeLimits(window, min, max));
+        // The current size moves inside the new limits.
+        if let Some((now, inside, scale)) = clamped
+            && now != inside
+        {
+            self.resize_window(window, inside, scale);
+            self.requests.push(Request::Resize(window, inside));
+        }
     }
 
     /// The window became (in)active.
@@ -1176,6 +1193,7 @@ impl Ui {
         }
         if let Some(w) = self.window_mut(window) {
             w.focus = Some(id);
+            w.key_anchor = None;
             w.keyboard_navigation = keyboard;
         }
         if let Some(n) = self.tree.get_mut(id) {
@@ -1210,6 +1228,10 @@ impl Ui {
             && self.tree.is_ancestor_or_self(id, f)
         {
             self.clear_focus(window);
+            let anchor = self.tree.parent(id);
+            if let Some(w) = self.window_mut(window) {
+                w.key_anchor = anchor;
+            }
         }
     }
 
@@ -1538,6 +1560,11 @@ impl Ui {
 
     /// A button went down at `pos`.
     pub fn pointer_down(&mut self, window: WindowId, pos: Point, button: Button, mods: Mods) {
+        if self.sheet_of(window).is_some() {
+            // A window with a sheet takes no input until the sheet is dismissed.
+            self.requests.push(Request::Beep);
+            return;
+        }
         let now = self.now;
         let clicks = match self.window_mut(window) {
             Some(w) => {
@@ -1668,6 +1695,9 @@ impl Ui {
     /// then the window's keys (Tab, Return for the default button, Escape for cancel); then
     /// the app's shortcuts; else [`Signal::KeyUnhandled`] on the root.
     pub fn key(&mut self, window: WindowId, key: KeyEvent) {
+        if self.sheet_of(window).is_some() {
+            return;
+        }
         let focus = self.focus(window);
         let root = self.window(window).map(|w| w.root);
         let mut handled = false;
@@ -1697,7 +1727,11 @@ impl Ui {
                 handled = true;
             }
         }
-        if !handled && let Some(f) = focus {
+        let anchor = self
+            .window(window)
+            .and_then(|w| w.key_anchor)
+            .filter(|a| self.tree.contains(*a) && self.is_visible(*a));
+        if !handled && let Some(f) = focus.or(anchor) {
             handled = self.send_bubbling(f, &Event::Key(key.clone())).is_some();
         }
         if !handled && key.pressed {
@@ -1762,8 +1796,19 @@ impl Ui {
         }
     }
 
+    /// The sheet shown on `window`, if any (the window is then modal to it).
+    pub fn sheet_of(&self, window: WindowId) -> Option<WindowId> {
+        self.windows
+            .iter()
+            .find(|w| w.visible && w.kind == WindowKind::Sheet { parent: window })
+            .map(|w| w.id)
+    }
+
     /// Committed text (keyboard or input method) for the focused view.
     pub fn text_input(&mut self, window: WindowId, text: &str) {
+        if self.sheet_of(window).is_some() {
+            return;
+        }
         if let Some(f) = self.focus(window) {
             self.send_bubbling(f, &Event::Text(text.to_string()));
         }
@@ -1955,7 +2000,13 @@ impl Ui {
     /// (window coordinates): the old and new painted bounds of every view that changed.
     pub fn prepare_frame(&mut self, window: WindowId) -> Rect {
         self.flush();
+        self.apply_restore(window);
         self.layout_window(window);
+        // Views made by the layout (rows coming into sight) are restored too.
+        if self.window(window).is_some_and(|w| !w.restore.is_empty()) {
+            self.apply_restore(window);
+            self.layout_window(window);
+        }
         let Some(root) = self.window(window).map(|w| w.root) else {
             return Rect::ZERO;
         };

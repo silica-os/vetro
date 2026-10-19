@@ -60,6 +60,7 @@ struct EffectState {
     rows: Option<RowsState>,
     sheet: Option<Shown>,
     popover: Option<Shown>,
+    alert: Option<vetro_kit::Window>,
 }
 
 /// A rendered element.
@@ -255,6 +256,53 @@ fn apply_effects(view: &KitView, state: &mut EffectState, want: &Effects, sched:
     }
     present(view, &mut state.sheet, want.sheet.as_ref(), true);
     present(view, &mut state.popover, want.popover.as_ref(), false);
+    present_alert(view, &mut state.alert, want.alert.as_ref());
+}
+
+/// Shows or dismisses an element's alert.
+fn present_alert(
+    view: &KitView,
+    slot: &mut Option<vetro_kit::Window>,
+    want: Option<&crate::element::AlertEffect>,
+) {
+    let presented = want.is_some_and(|w| w.0);
+    match (presented, slot.is_some()) {
+        (true, false) => {
+            let Some((_, spec, dismissed)) = want else {
+                return;
+            };
+            let Some(parent) = view.window() else { return };
+            let buttons: Vec<&str> = spec.buttons.iter().map(String::as_str).collect();
+            let flags = if spec.destructive {
+                vetro_kit::alert_flags::DESTRUCTIVE
+            } else {
+                0
+            };
+            let Ok(a) = KitView::alert(
+                &spec.title,
+                spec.message.as_deref(),
+                &buttons,
+                flags,
+                spec.icon.as_deref(),
+            ) else {
+                return;
+            };
+            let (response, dismissed) = (spec.response.clone(), dismissed.clone());
+            if let Ok(w) = vetro_kit::Window::present_alert(Some(&parent), &a, move |r| {
+                dismissed();
+                response(r);
+            }) {
+                *slot = Some(w);
+            }
+        }
+        (false, true) => {
+            if let Some(w) = slot.take() {
+                // Already closed when a button dismissed it.
+                let _ = w.close();
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Sets a collection's items (when their number, height or layout changed) or renders the
@@ -417,33 +465,46 @@ fn present(view: &KitView, slot: &mut Option<Shown>, want: Option<&Presentation>
         (true, None) => {
             let Some(p) = want else { return };
             let Some(parent) = view.window() else { return };
-            let window = if sheet {
-                vetro_kit::Window::sheet(parent, p.size.0, p.size.1)
-            } else {
-                let f = view.frame().unwrap_or_default();
-                vetro_kit::Window::popup(parent, f, p.size.0, p.size.1)
-            };
-            let Ok(window) = window else { return };
             let Ok(host) = KitView::new(vetro_kit::Kind::VIEW) else {
                 return;
             };
-            let _ = host.set_float(Prop::MAX_WIDTH, f64::INFINITY);
-            let _ = host.set_float(Prop::MAX_HEIGHT, f64::INFINITY);
-            let _ = window.set_content(&host);
             let content = Rc::new(RefCell::new(p.content.clone()));
             let c2 = content.clone();
-            let root = crate::mount(host, move || FnComponent(c2.borrow().clone()));
             let dismissed = p.dismissed.clone();
-            let close = window.root().and_then(|r| {
+            let (window, root, close) = if sheet {
+                let Ok(window) = vetro_kit::Window::sheet(parent, p.size.0, p.size.1) else {
+                    return;
+                };
+                let _ = host.set_float(Prop::MAX_WIDTH, f64::INFINITY);
+                let _ = host.set_float(Prop::MAX_HEIGHT, f64::INFINITY);
+                let _ = window.set_content(&host);
+                let root = crate::mount(host, move || FnComponent(c2.borrow().clone()));
+                let close = window.root().and_then(|r| {
+                    let d = dismissed.clone();
+                    r.on(Signal::CLOSED, move |_, _| {
+                        if let Some(d) = &d {
+                            d();
+                        }
+                    })
+                    .ok()
+                });
+                let _ = window.show();
+                (window, root, close)
+            } else {
+                // The kit's popover (arrow, material) around a host of the given size.
+                let _ = host.set_float(Prop::WIDTH, f64::from(p.size.0));
+                let _ = host.set_float(Prop::HEIGHT, f64::from(p.size.1));
+                let root = crate::mount(host.clone(), move || FnComponent(c2.borrow().clone()));
                 let d = dismissed.clone();
-                r.on(Signal::CLOSED, move |_, _| {
+                let Ok(window) = view.present_popover(&host, vetro_kit::side::BELOW, move || {
                     if let Some(d) = &d {
                         d();
                     }
-                })
-                .ok()
-            });
-            let _ = window.show();
+                }) else {
+                    return;
+                };
+                (window, root, None)
+            };
             *slot = Some(Shown {
                 window,
                 _root: root,

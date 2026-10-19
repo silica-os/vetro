@@ -21,6 +21,7 @@ pub mod sliders;
 pub mod statusbar;
 pub mod steppers;
 pub mod switch;
+pub mod tab_view;
 pub mod text;
 pub mod theme;
 pub mod titlebars;

@@ -196,4 +196,6 @@ impl Kind {
     pub const TABLE: Kind = Kind(sys::VETRO_KIND_TABLE);
     pub const OUTLINE: Kind = Kind(sys::VETRO_KIND_OUTLINE);
     pub const GRID_VIEW: Kind = Kind(sys::VETRO_KIND_GRID_VIEW);
+    pub const TAB_VIEW: Kind = Kind(sys::VETRO_KIND_TAB_VIEW);
+    pub const STATUS_ITEM: Kind = Kind(sys::VETRO_KIND_STATUS_ITEM);
 }
