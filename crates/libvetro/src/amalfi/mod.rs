@@ -2,6 +2,7 @@
 
 pub mod button;
 pub mod disclosure;
+pub mod fields;
 pub mod foundation;
 pub mod progress;
 pub mod segments;

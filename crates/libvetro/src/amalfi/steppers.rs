@@ -456,6 +456,68 @@ impl Widget for Stepper {
     }
 }
 
+/// A number as the value field shows it: whole numbers without a fraction.
+pub fn format_value(v: f64) -> String {
+    if v.is_finite() && v.fract() == 0.0 {
+        format!("{}", v as i64)
+    } else {
+        v.to_string()
+    }
+}
+
+/// A value field with a stepper beside it (kit `Steppers/With Field`): a row of the field
+/// (`Value field`) and the stepper (`Stepper`), 8 apart. Typing a number sets the stepper,
+/// stepping sets the text, Up and Down in the field step. The row emits
+/// `Signal::ValueChanged` (`Float`) when the value changes through the user.
+pub fn stepper_with_field(ui: &mut Ui, stepper: Stepper) -> ViewId {
+    use crate::core::layout::Stack;
+    let value = stepper.value;
+    let (min, max) = (stepper.min.min(stepper.max), stepper.max.max(stepper.min));
+    let row = ui.create(Stack::row(8.0));
+    let field =
+        ui.create(crate::amalfi::fields::TextField::value().with_text(&format_value(value)));
+    let step = ui.create(stepper);
+    let _ = ui.set(field, Prop::Identifier, Value::from("Value field"));
+    let _ = ui.set(step, Prop::Identifier, Value::from("Stepper"));
+    ui.add_child(row, field);
+    ui.add_child(row, step);
+    ui.connect(step, Signal::ValueChanged, move |ui, _, v| {
+        if let Some(n) = v.as_f64() {
+            let _ = ui.set(field, Prop::Text, Value::Str(format_value(n)));
+            ui.emit(row, Signal::ValueChanged, Value::Float(n));
+        }
+    });
+    ui.connect(field, Signal::TextChanged, move |ui, _, v| {
+        if let Some(n) = v.as_str().and_then(|s| s.trim().parse::<f64>().ok())
+            && n.is_finite()
+        {
+            let n = n.clamp(min, max);
+            let _ = ui.set(step, Prop::Value, Value::Float(n));
+            ui.emit(row, Signal::ValueChanged, Value::Float(n));
+        }
+    });
+    ui.connect(field, Signal::Activated, move |ui, _, v| {
+        let up = v.as_int().is_some_and(|i| i > 0);
+        let id = step;
+        let mut stepped = None;
+        ui.with_widget::<Stepper, _>(id, |s| {
+            if s.can(if up { Half::Up } else { Half::Down }, true) {
+                let h = if up { Half::Up } else { Half::Down };
+                let n = s.next(h);
+                if n != s.value {
+                    s.value = n;
+                    stepped = Some(n);
+                }
+            }
+        });
+        if let Some(n) = stepped {
+            let _ = ui.set(field, Prop::Text, Value::Str(format_value(n)));
+            ui.emit(row, Signal::ValueChanged, Value::Float(n));
+        }
+    });
+    row
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,6 +581,46 @@ mod tests {
             ui.advance(0.1);
         }
         assert_eq!(log.borrow().len(), n);
+    }
+
+    #[test]
+    fn the_field_and_the_stepper_follow_each_other() {
+        let mut ui = Ui::new_headless();
+        let win = ui.create_window(WindowKind::Normal, Size::new(200.0, 100.0));
+        let row = stepper_with_field(&mut ui, Stepper::new().value(12.0));
+        let log: Log = Rc::new(RefCell::new(Vec::new()));
+        let l = log.clone();
+        ui.connect(row, Signal::ValueChanged, move |_, _, v| {
+            l.borrow_mut().push(v.as_f64().unwrap_or(f64::NAN));
+        });
+        ui.set_content(win, row);
+        ui.show_window(win);
+        ui.prepare_frame(win);
+        let field = ui.find(row, "Value field");
+        let step = ui.find(row, "Stepper");
+        let (Some(field), Some(step)) = (field, step) else {
+            panic!("the parts are missing");
+        };
+        // The stepper's up half sets the text.
+        let r = ui.tree.window_rect(step);
+        let up = Point::new(r.x + 12.0, r.y + 4.0);
+        ui.pointer_move(win, up, Mods::empty());
+        ui.pointer_down(win, up, Button::Left, Mods::empty());
+        ui.pointer_up(win, up, Button::Left, Mods::empty());
+        assert_eq!(ui.get(field, Prop::Text), Some(Value::from("13")));
+        // Typing sets the stepper; Down in the field steps.
+        ui.set_focus(field, true);
+        key_press(&mut ui, win, Key::Backspace);
+        key_press(&mut ui, win, Key::Backspace);
+        ui.text_input(win, "40");
+        assert_eq!(ui.get(step, Prop::Value), Some(Value::Float(40.0)));
+        key_press(&mut ui, win, Key::Down);
+        assert_eq!(ui.get(field, Prop::Text), Some(Value::from("39")));
+        assert_eq!(log.borrow().last(), Some(&39.0));
+    }
+
+    fn key_press(ui: &mut Ui, win: WindowId, k: Key) {
+        ui.key(win, KeyEvent::press(k, Mods::empty()));
     }
 
     #[test]
