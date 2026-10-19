@@ -148,6 +148,33 @@ impl Renderer {
     }
 }
 
+/// Removes a file when dropped.
+struct RemoveOnDrop(std::path::PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// The inspector's socket (`$XDG_RUNTIME_DIR/vetro-inspect/<app>.<pid>.sock`), with
+/// `VETRO_INSPECT` set.
+fn inspector_socket(
+    app_id: &str,
+) -> Option<(std::path::PathBuf, std::os::unix::net::UnixListener)> {
+    use std::os::unix::fs::PermissionsExt;
+    std::env::var_os("VETRO_INSPECT")?;
+    let dir = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?).join("vetro-inspect");
+    std::fs::create_dir_all(&dir).ok()?;
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok()?;
+    let path = dir.join(format!("{app_id}.{}.sock", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    let l = std::os::unix::net::UnixListener::bind(&path).ok()?;
+    l.set_nonblocking(true).ok()?;
+    tracing::info!("inspector: {}", path.display());
+    Some((path, l))
+}
+
 /// Values the system services delivered, applied on the next pass of the loop.
 #[derive(Default)]
 struct Pending {
@@ -355,6 +382,30 @@ pub fn run_with(
         }
         None => None,
     };
+    let _inspector = inspector_socket(app_id).and_then(|(path, listener)| {
+        let source = smithay_client_toolkit::reexports::calloop::generic::Generic::new(
+            listener,
+            smithay_client_toolkit::reexports::calloop::Interest::READ,
+            smithay_client_toolkit::reexports::calloop::Mode::Level,
+        );
+        event_loop
+            .handle()
+            .insert_source(source, |_, l, p: &mut Platform| {
+                use std::io::{BufRead, BufReader, Write};
+                while let Ok((stream, _)) = l.accept() {
+                    let _ = stream.set_nonblocking(false);
+                    let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+                    let mut line = String::new();
+                    let _ = BufReader::new(std::io::Read::take(&stream, 4096)).read_line(&mut line);
+                    let answer = p.ui.inspect_command(line.trim());
+                    let mut s = &stream;
+                    let _ = s.write_all(answer.as_bytes());
+                }
+                Ok(smithay_client_toolkit::reexports::calloop::PostAction::Continue)
+            })
+            .ok()
+            .map(|_| RemoveOnDrop(path))
+    });
     let mut platform = Platform::new(conn, &globals, qh, event_loop.handle())?;
     platform.pending = pending;
     platform.ui.set_app_info(crate::core::app::AppInfo {

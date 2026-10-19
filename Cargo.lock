@@ -1501,6 +1501,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "vetro-inspector"
+version = "0.1.0"
+
+[[package]]
 name = "vetro-kit"
 version = "0.1.0"
 dependencies = [

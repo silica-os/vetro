@@ -8,6 +8,7 @@ pub mod app;
 pub mod display;
 pub mod env;
 pub mod event;
+pub mod inspect;
 pub mod layout;
 pub mod menu;
 pub mod tree;
