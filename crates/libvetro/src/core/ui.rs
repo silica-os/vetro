@@ -171,6 +171,8 @@ pub struct Ui {
     state_check: Vec<ViewId>,
     /// Global keyboard shortcuts of the app (menu key equivalents): shortcut → handler.
     shortcuts: Vec<(crate::core::event::Shortcut, ShortcutHandler)>,
+    /// The tooltip presenter.
+    pub(crate) tooltips: crate::amalfi::tooltips::Presenter,
 }
 
 impl Default for Ui {
@@ -200,6 +202,7 @@ impl Ui {
             flushing: false,
             state_check: Vec::new(),
             shortcuts: Vec::new(),
+            tooltips: crate::amalfi::tooltips::Presenter::default(),
         }
     }
 
@@ -1361,6 +1364,7 @@ impl Ui {
         if let Some(w) = self.window_mut(window) {
             w.hover = new_chain;
         }
+        crate::amalfi::tooltips::hover_changed(self, window);
     }
 
     /// The pointer left the window.

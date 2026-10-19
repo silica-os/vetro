@@ -7,3 +7,4 @@ pub mod text;
 pub mod theme;
 pub mod toggles;
 pub mod tokens;
+pub mod tooltips;
