@@ -4,7 +4,7 @@ use vetro_sys::*;
 
 use crate::amalfi::button::PushButton;
 use crate::amalfi::buttons::{HelpButton, IconButton, LinkButton, MenuButton, ToolbarButton};
-use crate::amalfi::collections::{ListView, TableHeader};
+use crate::amalfi::collections::{GridView, ListView, TableHeader, TableView};
 use crate::amalfi::disclosure::{Disclosure, DisclosureGroup};
 use crate::amalfi::fields::{FieldKind, TextField};
 use crate::amalfi::forms::{FormLayout, FormRow};
@@ -90,6 +90,9 @@ pub fn make(kind: u32) -> Option<Box<dyn Widget>> {
         VETRO_KIND_TAB => Box::new(Tab::new("")),
         VETRO_KIND_STATUS_BAR => Box::new(StatusBar),
         VETRO_KIND_TEXT => Box::new(crate::amalfi::text::Text::new("")),
+        VETRO_KIND_TABLE => Box::new(TableView::new(Vec::new())),
+        VETRO_KIND_OUTLINE => Box::new(TableView::outline(Vec::new())),
+        VETRO_KIND_GRID_VIEW => Box::new(GridView::new(0, Box::new(|_, _| None))),
         _ => return None,
     })
 }

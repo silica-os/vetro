@@ -83,6 +83,12 @@ VETRO_1.0 {
     vetro_view_window;
     vetro_window_new_sheet;
     vetro_list_set_rows;
+    vetro_table_add_column;
+    vetro_table_clear_columns;
+    vetro_table_set_cells;
+    vetro_outline_set_tree;
+    vetro_grid_set_items;
+    vetro_collection_reload;
   local:
     *;
 };

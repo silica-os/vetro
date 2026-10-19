@@ -252,7 +252,8 @@ fn lists_make_only_the_rows_in_sight() {
     // A frame lays the list out.
     w.snapshot_png(1.0).unwrap();
     let list = root.host().find("list").unwrap();
-    let live = list.children().len();
+    // The rows live in the list's body.
+    let live = list.children()[0].children().len();
     assert!(live > 4 && live < 20, "{live} rows");
     let r0 = root.host().find("r0").unwrap();
     assert_eq!(r0.get_str(Prop::TEXT).unwrap(), "Row 0");
@@ -262,4 +263,86 @@ fn lists_make_only_the_rows_in_sight() {
     w.snapshot_png(1.0).unwrap();
     assert_eq!(r0.get_str(Prop::TEXT).unwrap(), "Item 0");
     assert_eq!(root.host().find("r0").unwrap(), r0);
+}
+
+struct Collections {
+    sorted: Rc<Cell<i64>>,
+}
+
+impl Component for Collections {
+    fn body(&self, _cx: &mut Cx) -> Element {
+        let sorted = self.sorted.clone();
+        column((
+            crate::table(
+                vec![
+                    crate::Column::new("Name", 120.0),
+                    crate::Column::new("Size", 60.0),
+                ],
+                1000,
+                |r, c| label(format!("{r}:{c}")).id(&format!("t{r}.{c}")),
+            )
+            .on_sort(move |s| sorted.set(s.map_or(-99, |(c, a)| if a { c as i64 } else { -1 })))
+            .id("table")
+            .height(150.0)
+            .fill_width(),
+            crate::outline(
+                vec![crate::Column::new("Name", 120.0)],
+                |p| match p {
+                    None => vec![1, 2],
+                    Some(n) if n < 10 => vec![n * 10, n * 10 + 1],
+                    Some(_) => vec![],
+                },
+                |n| n < 10,
+                |n, _| label(format!("node {n}")).id(&format!("o{n}")),
+            )
+            .id("outline")
+            .height(120.0)
+            .fill_width(),
+            crate::collection(100, (104.0, 104.0), |i| {
+                label(format!("tile {i}")).id(&format!("g{i}"))
+            })
+            .id("grid")
+            .height(240.0)
+            .fill_width(),
+        ))
+        .fill()
+    }
+}
+
+#[test]
+fn tables_outlines_and_collections_build_their_items() {
+    let _rt = Headless::new().unwrap();
+    let sorted = Rc::new(Cell::new(7));
+    let s2 = sorted.clone();
+    let w = vetro_kit::Window::new(500.0, 600.0).unwrap();
+    let h = vetro_kit::View::new(vetro_kit::Kind::VIEW).unwrap();
+    h.set_float(Prop::MAX_WIDTH, f64::INFINITY).unwrap();
+    h.set_float(Prop::MAX_HEIGHT, f64::INFINITY).unwrap();
+    w.set_content(&h).unwrap();
+    w.show().unwrap();
+    let root = mount(h, move || Collections { sorted: s2.clone() });
+    w.snapshot_png(1.0).unwrap();
+    let host = root.host();
+    assert_eq!(
+        host.find("t3.1").unwrap().get_str(Prop::TEXT).unwrap(),
+        "3:1"
+    );
+    assert!(
+        host.find("t900.0").is_none(),
+        "rows out of sight are not made"
+    );
+    let table = host.find("table").unwrap();
+    let cols = table.get_str(Prop::COLUMN_TITLES).unwrap();
+    assert_eq!(cols, "Name\nSize");
+    assert!(host.find("o1").is_some() && host.find("o2").is_some());
+    assert!(host.find("o10").is_none(), "collapsed");
+    let outline = host.find("outline").unwrap();
+    outline.set_ints(Prop::EXPANDED_ITEMS, &[1]).unwrap();
+    w.snapshot_png(1.0).unwrap();
+    assert!(host.find("o10").is_some(), "expanded");
+    assert_eq!(outline.get_ints(Prop::EXPANDED_ITEMS).unwrap(), vec![1]);
+    assert!(host.find("g0").is_some());
+    let grid = host.find("grid").unwrap();
+    assert_eq!(grid.get_int(Prop::COLUMNS).unwrap(), 4);
+    assert_eq!(sorted.get(), 7);
 }

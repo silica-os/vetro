@@ -133,6 +133,7 @@ ids! { VALUE_KINDS,
     VETRO_VALUE_NONE = 0, VETRO_VALUE_BOOL = 1, VETRO_VALUE_INT = 2, VETRO_VALUE_FLOAT = 3,
     VETRO_VALUE_STRING = 4, VETRO_VALUE_COLOR = 5, VETRO_VALUE_POINT = 6, VETRO_VALUE_SIZE = 7,
     VETRO_VALUE_RECT = 8, VETRO_VALUE_RANGE = 9, VETRO_VALUE_STRING_LIST = 10,
+    VETRO_VALUE_CELL = 11,
 }
 
 /// A value handed to a signal callback (borrowed for the callback's duration).
@@ -239,6 +240,20 @@ pub type VetroBytesFn =
 pub type VetroMenuFn = Option<unsafe extern "C" fn(id: u32, user: *mut c_void)>;
 /// Makes the view of row `index` of a list (a new reference the list takes over), or null.
 pub type VetroRowFn = Option<unsafe extern "C" fn(index: u64, user: *mut c_void) -> *mut VetroView>;
+/// Makes the view of a table cell: the row's key (its index, or its node in an outline) and
+/// the column (a new reference the table takes over), or null.
+pub type VetroCellFn =
+    Option<unsafe extern "C" fn(key: u64, column: u32, user: *mut c_void) -> *mut VetroView>;
+/// The number of children of an outline node (`VETRO_OUTLINE_ROOT`: the roots).
+pub type VetroTreeCountFn = Option<unsafe extern "C" fn(parent: u64, user: *mut c_void) -> u64>;
+/// The id of child `index` of an outline node (`VETRO_OUTLINE_ROOT`: the roots).
+pub type VetroTreeChildFn =
+    Option<unsafe extern "C" fn(parent: u64, index: u64, user: *mut c_void) -> u64>;
+/// Whether an outline node can be expanded (1) or not (0).
+pub type VetroTreeExpandableFn = Option<unsafe extern "C" fn(node: u64, user: *mut c_void) -> u8>;
+
+/// The invisible root of an outline's tree.
+pub const VETRO_OUTLINE_ROOT: u64 = u64::MAX;
 
 // Properties: the numbers of libvetro's `core::value::Prop` (checked by its tests).
 ids! { PROPERTIES,
@@ -270,6 +285,10 @@ ids! { PROPERTIES,
     VETRO_PROP_EDGE = 152, VETRO_PROP_BORDERED = 153, VETRO_PROP_FORMAT = 154, VETRO_PROP_TINT = 155,
     VETRO_PROP_WRAPS = 156, VETRO_PROP_FONT_FAMILY = 157, VETRO_PROP_FONT_SIZE = 158,
     VETRO_PROP_FONT_WEIGHT = 159, VETRO_PROP_ANIMATION = 160, VETRO_PROP_TRANSITION = 161,
+    VETRO_PROP_SORT_DESCRIPTOR = 162, VETRO_PROP_COLUMN_WIDTHS = 163,
+    VETRO_PROP_ALTERNATING_ROWS = 164, VETRO_PROP_HEADER_VISIBLE = 165,
+    VETRO_PROP_ALLOWS_MULTIPLE_SELECTION = 166, VETRO_PROP_EXPANDED_ITEMS = 167,
+    VETRO_PROP_TILE_SIZE = 168,
 }
 
 // Signals: libvetro's `core::value::Signal`.
@@ -282,7 +301,8 @@ ids! { SIGNALS,
     VETRO_SIGNAL_CONTEXT_MENU = 14, VETRO_SIGNAL_DROPPED = 15, VETRO_SIGNAL_LINK_ACTIVATED = 16,
     VETRO_SIGNAL_SCROLLED = 17, VETRO_SIGNAL_RESIZED = 18, VETRO_SIGNAL_FOCUS_IN = 19,
     VETRO_SIGNAL_FOCUS_OUT = 20, VETRO_SIGNAL_KEY_UNHANDLED = 21, VETRO_SIGNAL_DRAG_BEGAN = 22,
-    VETRO_SIGNAL_DRAW = 23,
+    VETRO_SIGNAL_DRAW = 23, VETRO_SIGNAL_SORT_CHANGED = 24, VETRO_SIGNAL_CELL_EDITED = 25,
+    VETRO_SIGNAL_COLUMN_RESIZED = 26,
 }
 
 // View kinds for `vetro_view_new` (libvetro's `ffi::kinds`).
@@ -303,6 +323,13 @@ ids! { KINDS,
     VETRO_KIND_SIDEBAR_HEADER = 42, VETRO_KIND_SIDEBAR_GROUP = 43, VETRO_KIND_SIDEBAR_PANEL = 44,
     VETRO_KIND_FORM = 45, VETRO_KIND_FORM_ROW = 46, VETRO_KIND_TITLE_BAR = 47,
     VETRO_KIND_TAB_BAR = 48, VETRO_KIND_TAB = 49, VETRO_KIND_STATUS_BAR = 50, VETRO_KIND_TEXT = 51,
+    VETRO_KIND_TABLE = 52, VETRO_KIND_OUTLINE = 53, VETRO_KIND_GRID_VIEW = 54,
+}
+
+// Table column flags.
+ids! { COLUMN_FLAGS,
+    VETRO_COLUMN_EDITABLE = 1, VETRO_COLUMN_NOT_SORTABLE = 2, VETRO_COLUMN_FIXED_WIDTH = 4,
+    VETRO_COLUMN_ALIGN_CENTER = 8, VETRO_COLUMN_ALIGN_TRAILING = 16,
 }
 
 // Window kinds.
@@ -427,6 +454,13 @@ macro_rules! for_each_function {
             fn vetro_window_new_sheet(parent: *mut $crate::VetroWindow, width: f32, height: f32) -> *mut $crate::VetroWindow;
             // Virtualised lists.
             fn vetro_list_set_rows(view: *mut $crate::VetroView, rows: u64, row_height: f32, provider: $crate::VetroRowFn, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> $crate::VetroStatus;
+            // Tables, outlines and grids (VETRO_1.0 additions are appended below).
+            fn vetro_table_add_column(view: *mut $crate::VetroView, title: *const ::std::ffi::c_char, width: f32, min_width: f32, max_width: f32, flags: u32) -> $crate::VetroStatus;
+            fn vetro_table_clear_columns(view: *mut $crate::VetroView) -> $crate::VetroStatus;
+            fn vetro_table_set_cells(view: *mut $crate::VetroView, rows: u64, row_height: f32, provider: $crate::VetroCellFn, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> $crate::VetroStatus;
+            fn vetro_outline_set_tree(view: *mut $crate::VetroView, row_height: f32, count: $crate::VetroTreeCountFn, child: $crate::VetroTreeChildFn, expandable: $crate::VetroTreeExpandableFn, provider: $crate::VetroCellFn, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> $crate::VetroStatus;
+            fn vetro_grid_set_items(view: *mut $crate::VetroView, count: u64, tile_width: f32, tile_height: f32, provider: $crate::VetroRowFn, user: *mut ::std::ffi::c_void, destroy: $crate::VetroDestroy) -> $crate::VetroStatus;
+            fn vetro_collection_reload(view: *mut $crate::VetroView) -> $crate::VetroStatus;
         }
     };
 }

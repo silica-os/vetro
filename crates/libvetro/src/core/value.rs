@@ -35,9 +35,29 @@ pub enum Value {
     IntList(Vec<i64>),
     /// A byte range in a text.
     Range(usize, usize),
+    /// A cell of a table: its row key (row index, or node id in an outline), its column
+    /// and a text (an in-place edit's result).
+    Cell {
+        /// Row key.
+        row: u64,
+        /// Column.
+        column: u32,
+        /// Text.
+        text: String,
+    },
 }
 
 impl Value {
+    /// A list of integers, accepting a list of strings of integers (lists set through the
+    /// C ABI's string lists).
+    pub fn as_int_list(&self) -> Option<Vec<i64>> {
+        match self {
+            Value::IntList(l) => Some(l.clone()),
+            Value::StrList(l) => l.iter().map(|s| s.trim().parse().ok()).collect(),
+            _ => None,
+        }
+    }
+
     /// The boolean, accepting integers.
     pub fn as_bool(&self) -> Option<bool> {
         match self {
@@ -382,6 +402,21 @@ numbered_enum! {
         Animation = 160,
         /// Insertion and removal transition (`Int`: 0 none, 1 opacity, 2 scale).
         Transition = 161,
+        /// The sorted column of a table (`Int`: the column ascending, `-column - 1`
+        /// descending; `None`: unsorted).
+        SortDescriptor = 162,
+        /// Widths of a table's columns (`IntList`, points).
+        ColumnWidths = 163,
+        /// Alternating row backgrounds (`Bool`).
+        AlternatingRows = 164,
+        /// A table's header shows (`Bool`).
+        HeaderVisible = 165,
+        /// More than one row or item can be selected (`Bool`).
+        AllowsMultipleSelection = 166,
+        /// The expanded nodes of an outline (`IntList` of node ids).
+        ExpandedItems = 167,
+        /// The tile of a grid view (`Size`).
+        TileSize = 168,
     }
 }
 
@@ -434,6 +469,12 @@ numbered_enum! {
         DragBegan = 22,
         /// Custom drawing requested (custom views).
         Draw = 23,
+        /// A table's sort changed (payload: `SortDescriptor`'s `Int`).
+        SortChanged = 24,
+        /// A cell was edited in place (payload: `Cell` with the new text).
+        CellEdited = 25,
+        /// A column was resized (payload: `IntList` [column, width]).
+        ColumnResized = 26,
     }
 }
 

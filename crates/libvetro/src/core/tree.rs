@@ -65,6 +65,8 @@ bitflags::bitflags! {
         const ROOT = 1 << 10;
         /// Being removed: drawn while its leave transition plays, out of layout and hits.
         const LEAVING = 1 << 11;
+        /// Drawn on an accent fill (a selected row): its subtree uses the emphasized theme.
+        const EMPHASIZED = 1 << 12;
     }
 }
 
@@ -97,6 +99,9 @@ pub struct Modifiers {
     pub max_height: Option<f32>,
     /// Alignment of the content in a frame larger than it.
     pub alignment: Alignment,
+    /// The alignment was set: the content is laid out at its own size, aligned in the
+    /// frame (otherwise it fills the frame inside the padding).
+    pub aligns_content: bool,
     /// Priority in stacks.
     pub priority: f32,
     /// Opacity (multiplies the subtree).
@@ -128,6 +133,7 @@ impl Default for Modifiers {
             min_height: None,
             max_height: None,
             alignment: Alignment::CENTER,
+            aligns_content: false,
             priority: 0.0,
             opacity: 1.0,
             background: None,
@@ -178,6 +184,9 @@ pub struct Node {
     pub refs: u32,
     /// Cached measurements: (proposal, size).
     pub measure_cache: Vec<(Proposal, Size)>,
+    /// The content box in the view's coordinates when the content is aligned in a larger
+    /// frame (see `Modifiers::aligns_content`).
+    pub content: Option<Rect>,
     /// The last recorded drawing (under the children).
     pub display: DisplayList,
     /// The last recorded drawing over the children.
@@ -206,6 +215,7 @@ impl Node {
             dark_override: None,
             refs: 1,
             measure_cache: Vec::new(),
+            content: None,
             display: DisplayList::default(),
             display_over: DisplayList::default(),
             painted_bounds: Rect::ZERO,

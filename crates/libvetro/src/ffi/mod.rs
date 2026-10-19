@@ -14,6 +14,7 @@
 )]
 
 mod canvas;
+mod collections;
 mod kinds;
 mod menu;
 
@@ -877,6 +878,12 @@ pub extern "C" fn vetro_view_get_string(
     guard(VETRO_ERROR_PLATFORM, || match get_value(view, prop) {
         Ok(Value::Str(s)) => set_last(copy_out(&s, buffer, capacity, out_len)),
         Ok(Value::None) => set_last(copy_out("", buffer, capacity, out_len)),
+        // Lists: one item per line.
+        Ok(Value::StrList(l)) => set_last(copy_out(&l.join("\n"), buffer, capacity, out_len)),
+        Ok(Value::IntList(l)) => {
+            let s = l.iter().map(i64::to_string).collect::<Vec<_>>().join("\n");
+            set_last(copy_out(&s, buffer, capacity, out_len))
+        }
         Ok(_) => set_last(VETRO_ERROR_BAD_VALUE),
         Err(e) => set_last(e),
     })
@@ -965,6 +972,16 @@ fn c_value(v: &Value, text: &mut String) -> VetroValue {
             out.kind = VETRO_VALUE_RANGE;
             out.i = *a as i64;
             out.f = *b as f64;
+        }
+        Value::Cell {
+            row,
+            column,
+            text: t,
+        } => {
+            out.kind = VETRO_VALUE_CELL;
+            out.i = *row as i64;
+            out.f = f64::from(*column);
+            *text = t.clone();
         }
     }
     if !text.is_empty() {
@@ -1470,6 +1487,7 @@ macro_rules! check_signatures {
 #[allow(unused_imports)]
 use canvas::*;
 #[allow(unused_imports)]
+use collections::*;
 use menu::*;
 
 vetro_sys::for_each_function!(check_signatures);

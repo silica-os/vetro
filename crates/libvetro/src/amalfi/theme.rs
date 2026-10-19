@@ -14,6 +14,9 @@ pub struct Theme {
     pub appearance: Appearance,
     /// The system colours.
     pub colors: Palette,
+    /// Drawn on an accent fill (a selected row or tile): text and accent-coloured glyphs
+    /// take `Text/On Accent`.
+    pub emphasized: bool,
 }
 
 impl Theme {
@@ -35,7 +38,24 @@ impl Theme {
             colors.accent_amalfi_soft = accent.with_alpha(colors.accent_amalfi_soft.a);
             colors.line_focus = accent.with_alpha(colors.line_focus.a);
         }
-        Theme { appearance, colors }
+        Theme {
+            appearance,
+            colors,
+            emphasized: false,
+        }
+    }
+
+    /// This theme on an accent fill (selected rows and tiles): every text colour becomes
+    /// `Text/On Accent`, and so do glyphs coloured with the accent by name.
+    pub fn emphasize(mut self) -> Theme {
+        if !self.emphasized {
+            let on = self.colors.text_on_accent;
+            self.colors.text_primary = on;
+            self.colors.text_secondary = on;
+            self.colors.text_tertiary = on;
+            self.emphasized = true;
+        }
+        self
     }
 
     /// Whether this is the dark appearance.
@@ -56,6 +76,7 @@ impl Theme {
     /// A colour by token name (`Text/Primary`, `App/Clock/Window` …).
     pub fn color(&self, name: &str) -> Option<Color> {
         let system = match name {
+            "Accent/Amalfi" if self.emphasized => Some(self.colors.text_on_accent),
             "Accent/Amalfi" => Some(self.colors.accent_amalfi),
             "Accent/Amalfi Pressed" => Some(self.colors.accent_amalfi_pressed),
             "Accent/Amalfi Soft" => Some(self.colors.accent_amalfi_soft),

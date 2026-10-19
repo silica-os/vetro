@@ -64,6 +64,12 @@ typedef uint8_t (*VetroEventFn)(VetroView *view, const VetroEvent *event, void *
 typedef void (*VetroBytesFn)(const uint8_t *data, size_t len, void *user);
 typedef void (*VetroMenuFn)(uint32_t id, void *user);
 typedef VetroView *(*VetroRowFn)(uint64_t index, void *user);
+typedef VetroView *(*VetroCellFn)(uint64_t key, uint32_t column, void *user);
+typedef uint64_t (*VetroTreeCountFn)(uint64_t parent, void *user);
+typedef uint64_t (*VetroTreeChildFn)(uint64_t parent, uint64_t index, void *user);
+typedef uint8_t (*VetroTreeExpandableFn)(uint64_t node, void *user);
+
+#define VETRO_OUTLINE_ROOT UINT64_MAX
 
 #define VETRO_OK (0)
 #define VETRO_ERROR_NO_SUCH_OBJECT (-1)
@@ -97,6 +103,7 @@ typedef VetroView *(*VetroRowFn)(uint64_t index, void *user);
 #define VETRO_VALUE_RECT 8u
 #define VETRO_VALUE_RANGE 9u
 #define VETRO_VALUE_STRING_LIST 10u
+#define VETRO_VALUE_CELL 11u
 
 /* Events, modifiers and keys. */
 #define VETRO_EVENT_POINTER_DOWN 1u
@@ -215,6 +222,13 @@ typedef VetroView *(*VetroRowFn)(uint64_t index, void *user);
 #define VETRO_PROP_FONT_WEIGHT 159u
 #define VETRO_PROP_ANIMATION 160u
 #define VETRO_PROP_TRANSITION 161u
+#define VETRO_PROP_SORT_DESCRIPTOR 162u
+#define VETRO_PROP_COLUMN_WIDTHS 163u
+#define VETRO_PROP_ALTERNATING_ROWS 164u
+#define VETRO_PROP_HEADER_VISIBLE 165u
+#define VETRO_PROP_ALLOWS_MULTIPLE_SELECTION 166u
+#define VETRO_PROP_EXPANDED_ITEMS 167u
+#define VETRO_PROP_TILE_SIZE 168u
 
 /* Signals. */
 #define VETRO_SIGNAL_ACTIVATED 1u
@@ -240,6 +254,9 @@ typedef VetroView *(*VetroRowFn)(uint64_t index, void *user);
 #define VETRO_SIGNAL_KEY_UNHANDLED 21u
 #define VETRO_SIGNAL_DRAG_BEGAN 22u
 #define VETRO_SIGNAL_DRAW 23u
+#define VETRO_SIGNAL_SORT_CHANGED 24u
+#define VETRO_SIGNAL_CELL_EDITED 25u
+#define VETRO_SIGNAL_COLUMN_RESIZED 26u
 
 /* View kinds. */
 #define VETRO_KIND_VIEW 1u
@@ -293,6 +310,9 @@ typedef VetroView *(*VetroRowFn)(uint64_t index, void *user);
 #define VETRO_KIND_TAB 49u
 #define VETRO_KIND_STATUS_BAR 50u
 #define VETRO_KIND_TEXT 51u
+#define VETRO_KIND_TABLE 52u
+#define VETRO_KIND_OUTLINE 53u
+#define VETRO_KIND_GRID_VIEW 54u
 
 /* Window kinds. */
 #define VETRO_WINDOW_NORMAL 1u
@@ -319,6 +339,13 @@ typedef VetroView *(*VetroRowFn)(uint64_t index, void *user);
 #define VETRO_MENU_HEADING 16u
 #define VETRO_POPUP_CONTEXT 0u
 #define VETRO_POPUP_POP_UP 1u
+
+/* Table column flags. */
+#define VETRO_COLUMN_EDITABLE 1u
+#define VETRO_COLUMN_NOT_SORTABLE 2u
+#define VETRO_COLUMN_FIXED_WIDTH 4u
+#define VETRO_COLUMN_ALIGN_CENTER 8u
+#define VETRO_COLUMN_ALIGN_TRAILING 16u
 
 uint32_t vetro_abi_version(void);
 VetroStatus vetro_last_status(void);
@@ -402,6 +429,12 @@ VetroStatus vetro_view_perform(VetroView *view, uint32_t action);
 VetroWindow *vetro_view_window(VetroView *view);
 VetroWindow *vetro_window_new_sheet(VetroWindow *parent, float width, float height);
 VetroStatus vetro_list_set_rows(VetroView *view, uint64_t rows, float row_height, VetroRowFn provider, void *user, VetroDestroy destroy);
+VetroStatus vetro_table_add_column(VetroView *view, const char *title, float width, float min_width, float max_width, uint32_t flags);
+VetroStatus vetro_table_clear_columns(VetroView *view);
+VetroStatus vetro_table_set_cells(VetroView *view, uint64_t rows, float row_height, VetroCellFn provider, void *user, VetroDestroy destroy);
+VetroStatus vetro_outline_set_tree(VetroView *view, float row_height, VetroTreeCountFn count, VetroTreeChildFn child, VetroTreeExpandableFn expandable, VetroCellFn provider, void *user, VetroDestroy destroy);
+VetroStatus vetro_grid_set_items(VetroView *view, uint64_t count, float tile_width, float tile_height, VetroRowFn provider, void *user, VetroDestroy destroy);
+VetroStatus vetro_collection_reload(VetroView *view);
 
 #ifdef __cplusplus
 }

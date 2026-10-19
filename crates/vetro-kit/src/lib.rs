@@ -131,6 +131,15 @@ pub enum Value {
     Range(usize, usize),
     /// List of strings.
     List(Vec<String>),
+    /// A table cell: row key (row index, or node id in an outline), column, text.
+    Cell {
+        /// Row key.
+        row: u64,
+        /// Column.
+        column: u32,
+        /// Text (an in-place edit's result).
+        text: String,
+    },
 }
 
 impl Value {
@@ -191,6 +200,11 @@ impl Value {
             sys::VETRO_VALUE_RANGE => {
                 Value::Range(usize::try_from(v.i).unwrap_or(0), v.f.max(0.0) as usize)
             }
+            sys::VETRO_VALUE_CELL => Value::Cell {
+                row: v.i as u64,
+                column: v.f.clamp(0.0, f64::from(u32::MAX)) as u32,
+                text: text(),
+            },
             sys::VETRO_VALUE_STRING_LIST => {
                 let t = text();
                 if t.is_empty() {
@@ -202,6 +216,125 @@ impl Value {
             _ => Value::None,
         }
     }
+}
+
+type RowCb = Box<dyn FnMut(usize) -> Option<View>>;
+type CellCb = Box<dyn FnMut(u64, u32) -> Option<View>>;
+
+/// A made view handed to libvetro, which takes over its reference.
+fn hand_over(v: Option<View>) -> *mut sys::VetroView {
+    match v {
+        Some(v) => {
+            let p = v.as_ptr();
+            std::mem::forget(v);
+            p
+        }
+        None => std::ptr::null_mut(),
+    }
+}
+
+unsafe extern "C" fn call_row(index: u64, user: *mut c_void) -> *mut sys::VetroView {
+    // SAFETY: `user` is a boxed `RowCb`, alive until destroy.
+    let cb = unsafe { &mut *(user.cast::<RowCb>()) };
+    hand_over(usize::try_from(index).ok().and_then(cb))
+}
+
+unsafe extern "C" fn call_cell(key: u64, column: u32, user: *mut c_void) -> *mut sys::VetroView {
+    // SAFETY: `user` is a boxed `CellCb`, alive until destroy.
+    let cb = unsafe { &mut *(user.cast::<CellCb>()) };
+    hand_over(cb(key, column))
+}
+
+/// A column of a table or an outline.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Column {
+    /// Title.
+    pub title: String,
+    /// Width.
+    pub width: f32,
+    /// Narrowest by resizing (0: the default).
+    pub min_width: f32,
+    /// Widest by resizing (0: no limit).
+    pub max_width: f32,
+    /// Cells can be edited in place.
+    pub editable: bool,
+    /// Clicking the title sorts.
+    pub sortable: bool,
+    /// The right edge can be dragged.
+    pub resizable: bool,
+    /// Title alignment: 0 leading, 1 centre, 2 trailing.
+    pub align: u8,
+}
+
+impl Column {
+    /// A sortable, resizable column.
+    pub fn new(title: &str, width: f32) -> Column {
+        Column {
+            title: title.to_string(),
+            width,
+            min_width: 0.0,
+            max_width: 0.0,
+            editable: false,
+            sortable: true,
+            resizable: true,
+            align: 0,
+        }
+    }
+
+    /// Cells can be edited.
+    pub fn editable(mut self) -> Self {
+        self.editable = true;
+        self
+    }
+
+    /// Not sortable.
+    pub fn unsortable(mut self) -> Self {
+        self.sortable = false;
+        self
+    }
+
+    /// Fixed width.
+    pub fn fixed(mut self) -> Self {
+        self.resizable = false;
+        self
+    }
+
+    /// Title alignment: 0 leading, 1 centre, 2 trailing.
+    pub fn align(mut self, align: u8) -> Self {
+        self.align = align;
+        self
+    }
+
+    fn flags(&self) -> u32 {
+        let mut f = 0;
+        if self.editable {
+            f |= sys::VETRO_COLUMN_EDITABLE;
+        }
+        if !self.sortable {
+            f |= sys::VETRO_COLUMN_NOT_SORTABLE;
+        }
+        if !self.resizable {
+            f |= sys::VETRO_COLUMN_FIXED_WIDTH;
+        }
+        match self.align {
+            1 => f |= sys::VETRO_COLUMN_ALIGN_CENTER,
+            2 => f |= sys::VETRO_COLUMN_ALIGN_TRAILING,
+            _ => {}
+        }
+        f
+    }
+}
+
+/// The tree an outline shows (node ids are the app's; `None` is the root).
+pub trait Tree: 'static {
+    /// Number of children of `parent`.
+    fn child_count(&mut self, parent: Option<u64>) -> u64;
+    /// Id of child `index` of `parent`.
+    fn child(&mut self, parent: Option<u64>, index: u64) -> u64;
+    /// Whether `node` can be expanded.
+    fn is_expandable(&mut self, node: u64) -> bool;
+    /// The view of `node`'s cell in `column`.
+    fn cell(&mut self, node: u64, column: u32) -> Option<View>;
 }
 
 /// Boxed closure data handed to the ABI with a destroy trampoline.
@@ -489,6 +622,18 @@ impl View {
         })
     }
 
+    /// Sets a list of integers (selected rows, column widths, expanded nodes).
+    pub fn set_ints(&self, prop: Prop, items: &[i64]) -> Result<()> {
+        let s: Vec<String> = items.iter().map(i64::to_string).collect();
+        self.set_strings(prop, &s)
+    }
+
+    /// Reads a list of integers.
+    pub fn get_ints(&self, prop: Prop) -> Result<Vec<i64>> {
+        let s = self.get_str(prop)?;
+        Ok(s.lines().filter_map(|l| l.trim().parse().ok()).collect())
+    }
+
     /// Reads a boolean property.
     pub fn get_bool(&self, prop: Prop) -> Result<bool> {
         let mut v = 0u8;
@@ -589,32 +734,133 @@ impl View {
         row_height: f32,
         row: impl FnMut(usize) -> Option<View> + 'static,
     ) -> Result<()> {
-        type Cb = Box<dyn FnMut(usize) -> Option<View>>;
-        unsafe extern "C" fn call(index: u64, user: *mut c_void) -> *mut sys::VetroView {
-            // SAFETY: `user` is a boxed `Cb`, alive until destroy.
-            let cb = unsafe { &mut *(user.cast::<Cb>()) };
-            match usize::try_from(index).ok().and_then(cb) {
-                Some(v) => {
-                    // The list takes over this handle's reference.
-                    let p = v.as_ptr();
-                    std::mem::forget(v);
-                    p
-                }
-                None => std::ptr::null_mut(),
-            }
-        }
-        let data: Cb = Box::new(row);
-        // SAFETY: the data is freed by `destroy::<Cb>` exactly once.
+        let data: RowCb = Box::new(row);
+        // SAFETY: the data is freed by `destroy::<RowCb>` exactly once.
         check(unsafe {
             f::vetro_list_set_rows(
                 self.as_ptr(),
                 rows as u64,
                 row_height,
-                Some(call),
+                Some(call_row),
                 boxed(data),
-                Some(destroy::<Cb>),
+                Some(destroy::<RowCb>),
             )
         })
+    }
+
+    /// Adds a column to a table or an outline (`Kind::TABLE`, `Kind::OUTLINE`).
+    pub fn add_column(&self, column: &Column) -> Result<()> {
+        let t = cstring(&column.title)?;
+        // SAFETY: a handle, a string alive for the call and plain values.
+        check(unsafe {
+            f::vetro_table_add_column(
+                self.as_ptr(),
+                t.as_ptr(),
+                column.width,
+                column.min_width,
+                column.max_width,
+                column.flags(),
+            )
+        })
+    }
+
+    /// Removes every column of a table or an outline.
+    pub fn clear_columns(&self) -> Result<()> {
+        // SAFETY: a handle.
+        check(unsafe { f::vetro_table_clear_columns(self.as_ptr()) })
+    }
+
+    /// Table mode: `rows` rows of `row_height`; `cell(row, column)` makes a cell's view when
+    /// its row scrolls into sight.
+    pub fn set_cells(
+        &self,
+        rows: usize,
+        row_height: f32,
+        cell: impl FnMut(u64, u32) -> Option<View> + 'static,
+    ) -> Result<()> {
+        let data: CellCb = Box::new(cell);
+        // SAFETY: the data is freed by `destroy::<CellCb>` exactly once.
+        check(unsafe {
+            f::vetro_table_set_cells(
+                self.as_ptr(),
+                rows as u64,
+                row_height,
+                Some(call_cell),
+                boxed(data),
+                Some(destroy::<CellCb>),
+            )
+        })
+    }
+
+    /// Outline mode: the rows are the visible nodes of `tree`; its cells are made by
+    /// [`Tree::cell`].
+    pub fn set_tree<T: Tree>(&self, row_height: f32, tree: T) -> Result<()> {
+        unsafe extern "C" fn count<T: Tree>(parent: u64, user: *mut c_void) -> u64 {
+            // SAFETY: `user` is the boxed `T`, alive until destroy.
+            let t = unsafe { &mut *(user.cast::<T>()) };
+            t.child_count((parent != sys::VETRO_OUTLINE_ROOT).then_some(parent))
+        }
+        unsafe extern "C" fn child<T: Tree>(parent: u64, index: u64, user: *mut c_void) -> u64 {
+            // SAFETY: as above.
+            let t = unsafe { &mut *(user.cast::<T>()) };
+            t.child((parent != sys::VETRO_OUTLINE_ROOT).then_some(parent), index)
+        }
+        unsafe extern "C" fn expandable<T: Tree>(node: u64, user: *mut c_void) -> u8 {
+            // SAFETY: as above.
+            let t = unsafe { &mut *(user.cast::<T>()) };
+            u8::from(t.is_expandable(node))
+        }
+        unsafe extern "C" fn cell<T: Tree>(
+            node: u64,
+            column: u32,
+            user: *mut c_void,
+        ) -> *mut sys::VetroView {
+            // SAFETY: as above.
+            let t = unsafe { &mut *(user.cast::<T>()) };
+            hand_over(t.cell(node, column))
+        }
+        // SAFETY: the data is freed by `destroy::<T>` exactly once.
+        check(unsafe {
+            f::vetro_outline_set_tree(
+                self.as_ptr(),
+                row_height,
+                Some(count::<T>),
+                Some(child::<T>),
+                Some(expandable::<T>),
+                Some(cell::<T>),
+                boxed(tree),
+                Some(destroy::<T>),
+            )
+        })
+    }
+
+    /// Grid (`Kind::GRID_VIEW`): `count` tiles of `tile` (0 × 0: the kit's 104 × 104);
+    /// `item` makes a tile's view when it scrolls into sight.
+    pub fn set_items(
+        &self,
+        count: usize,
+        tile: (f32, f32),
+        item: impl FnMut(usize) -> Option<View> + 'static,
+    ) -> Result<()> {
+        let data: RowCb = Box::new(item);
+        // SAFETY: the data is freed by `destroy::<RowCb>` exactly once.
+        check(unsafe {
+            f::vetro_grid_set_items(
+                self.as_ptr(),
+                count as u64,
+                tile.0,
+                tile.1,
+                Some(call_row),
+                boxed(data),
+                Some(destroy::<RowCb>),
+            )
+        })
+    }
+
+    /// Makes the rows, cells or tiles of a collection again (the data changed).
+    pub fn reload(&self) -> Result<()> {
+        // SAFETY: a handle.
+        check(unsafe { f::vetro_collection_reload(self.as_ptr()) })
     }
 
     /// Records the drawing again.

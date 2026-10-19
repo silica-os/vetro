@@ -178,12 +178,47 @@ pub(crate) struct Presentation {
     pub(crate) dismissed: Option<Rc<dyn Fn()>>,
 }
 
-/// The rows of a virtualised list.
+/// The children and expandability of an outline's nodes.
+#[derive(Clone)]
+pub(crate) struct TreeFns {
+    pub(crate) children: Rc<dyn Fn(Option<u64>) -> Vec<u64>>,
+    pub(crate) expandable: Rc<dyn Fn(u64) -> bool>,
+}
+
+/// How a collection lays its items out.
+#[derive(Clone)]
+pub(crate) enum RowsLayout {
+    /// A list of rows.
+    List,
+    /// A table with columns.
+    Table(Rc<[vetro_kit::Column]>),
+    /// An outline with columns over a tree.
+    Outline(Rc<[vetro_kit::Column]>, TreeFns),
+    /// A grid of tiles.
+    Grid(f32, f32),
+}
+
+impl RowsLayout {
+    /// Whether two layouts make the same kind of rows (so live rows can be rendered again in
+    /// place).
+    pub(crate) fn same(&self, o: &RowsLayout) -> bool {
+        match (self, o) {
+            (RowsLayout::List, RowsLayout::List) => true,
+            (RowsLayout::Table(a), RowsLayout::Table(b)) => a == b,
+            (RowsLayout::Outline(a, _), RowsLayout::Outline(b, _)) => a == b,
+            (RowsLayout::Grid(w, h), RowsLayout::Grid(x, y)) => w == x && h == y,
+            _ => false,
+        }
+    }
+}
+
+/// The items of a virtualised collection: `cell(key, column)` builds an item's element.
 #[derive(Clone)]
 pub(crate) struct Rows {
     pub(crate) count: usize,
     pub(crate) height: f32,
-    pub(crate) row: Rc<dyn Fn(usize) -> Element>,
+    pub(crate) layout: RowsLayout,
+    pub(crate) cell: Rc<dyn Fn(u64, u32) -> Element>,
 }
 
 /// Side effects of an element beyond its view.
@@ -251,6 +286,77 @@ impl Element {
     /// Runs `f` when the control is activated (buttons, menu rows).
     pub fn on_activate(self, f: impl Fn() + 'static) -> Self {
         self.on(Signal::ACTIVATED, move |_| f())
+    }
+
+    /// Runs `f` with the selected rows' keys (rows of a list or a table, nodes of an
+    /// outline, tiles of a collection).
+    pub fn on_select(self, f: impl Fn(Vec<u64>) + 'static) -> Self {
+        self.on(Signal::SELECTION_CHANGED, move |v| {
+            if let Value::List(l) = v {
+                f(l.iter().filter_map(|s| s.parse().ok()).collect());
+            }
+        })
+    }
+
+    /// Selects rows by key.
+    pub fn selection(self, keys: &[u64]) -> Self {
+        let l: Vec<String> = keys.iter().map(u64::to_string).collect();
+        self.prop(Prop::SELECTED_ROWS, PValue::Strings(l.into()))
+    }
+
+    /// Runs `f` with a row's key on a double click or Return.
+    pub fn on_open(self, f: impl Fn(u64) + 'static) -> Self {
+        self.on(Signal::DOUBLE_CLICKED, move |v| {
+            if let Value::Int(i) = v {
+                f(*i as u64);
+            }
+        })
+    }
+
+    /// Runs `f` with the sorted column and whether ascending (`None`: unsorted) when the
+    /// user clicks a column title.
+    pub fn on_sort(self, f: impl Fn(Option<(usize, bool)>) + 'static) -> Self {
+        self.on(Signal::SORT_CHANGED, move |v| match v {
+            Value::Int(i) if *i >= 0 => f(Some((*i as usize, true))),
+            Value::Int(i) => f(Some(((-(i + 1)) as usize, false))),
+            _ => f(None),
+        })
+    }
+
+    /// Shows the sort indicator on `column` (ascending or not).
+    pub fn sorted(self, sort: Option<(usize, bool)>) -> Self {
+        let v = match sort {
+            Some((c, true)) => PValue::Int(c as i64),
+            Some((c, false)) => PValue::Int(-(c as i64) - 1),
+            None => PValue::None,
+        };
+        self.prop(Prop::SORT_DESCRIPTOR, v)
+    }
+
+    /// Runs `f(row key, column, text)` when a cell of an editable column is edited.
+    pub fn on_edit(self, f: impl Fn(u64, usize, String) + 'static) -> Self {
+        self.on(Signal::CELL_EDITED, move |v| {
+            if let Value::Cell { row, column, text } = v {
+                f(*row, *column as usize, text.clone());
+            }
+        })
+    }
+
+    /// Runs `f(node, expanded)` when an outline node is expanded or collapsed.
+    pub fn on_expand(self, f: impl Fn(u64, bool) + 'static) -> Self {
+        self.on(Signal::EXPANDED_CHANGED, move |v| {
+            if let Value::List(l) = v
+                && let [n, e] = l.as_slice()
+                && let (Ok(n), Ok(e)) = (n.parse::<u64>(), e.parse::<u8>())
+            {
+                f(n, e != 0);
+            }
+        })
+    }
+
+    /// Alternating row backgrounds (tables).
+    pub fn alternating(self, on: bool) -> Self {
+        self.prop(Prop::ALTERNATING_ROWS, PValue::Bool(on))
     }
 
     /// Runs `f` with the new value when the user changes it.
@@ -416,6 +522,16 @@ impl Element {
     /// The type style token (`Title 1`, `Headline` …).
     pub fn text_style(self, token: &str) -> Self {
         self.prop(Prop::TEXT_STYLE, PValue::Str(Rc::from(token)))
+    }
+
+    /// Alignment of a label's lines: 0 leading, 1 centre, 2 trailing, 3 justified.
+    pub fn text_align(self, a: i64) -> Self {
+        self.prop(Prop::TEXT_ALIGNMENT, PValue::Int(a))
+    }
+
+    /// The font size of a label or the size of a symbol image.
+    pub fn font_size(self, size: f32) -> Self {
+        self.prop(Prop::FONT_SIZE, PValue::Float(f64::from(size)))
     }
 
     /// The text colour token (`Text/Secondary` …).
@@ -699,7 +815,74 @@ pub fn list(count: usize, row_height: f32, row: impl Fn(usize) -> Element + 'sta
     e.effects.rows = Some(Rows {
         count,
         height: row_height,
-        row: Rc::new(row),
+        layout: RowsLayout::List,
+        cell: Rc::new(move |k, _| row(usize::try_from(k).unwrap_or(usize::MAX))),
+    });
+    e
+}
+
+/// A virtualised table of `rows` rows under `columns`: `cell(row, column)` builds a cell's
+/// element when its row scrolls into sight (cells fill their column: use
+/// [`Element::align`] to place the content). Row height: the kit's 28.
+/// `Signal::SORT_CHANGED` carries the sort (see [`Element::on_sort`]),
+/// `Signal::CELL_EDITED` an edit of an editable column ([`Element::on_edit`]),
+/// `Signal::SELECTION_CHANGED` the selected rows, `Signal::DOUBLE_CLICKED` a row.
+pub fn table(
+    columns: Vec<vetro_kit::Column>,
+    rows: usize,
+    cell: impl Fn(usize, usize) -> Element + 'static,
+) -> Element {
+    let mut e = Element::of(Kind::TABLE);
+    e.effects.rows = Some(Rows {
+        count: rows,
+        height: 28.0,
+        layout: RowsLayout::Table(columns.into()),
+        cell: Rc::new(move |k, c| cell(usize::try_from(k).unwrap_or(usize::MAX), c as usize)),
+    });
+    e
+}
+
+/// A virtualised outline: a table whose rows are the visible nodes of a tree. `children`
+/// lists a node's children (`None`: the roots), `expandable` says whether a node shows a
+/// chevron, `cell(node, column)` builds a cell's element. Node ids are the app's; the
+/// tree is read again on every render, keeping the expanded nodes and the selection.
+/// Signals carry node ids; `Signal::EXPANDED_CHANGED` carries `[node, 1 | 0]`.
+pub fn outline(
+    columns: Vec<vetro_kit::Column>,
+    children: impl Fn(Option<u64>) -> Vec<u64> + 'static,
+    expandable: impl Fn(u64) -> bool + 'static,
+    cell: impl Fn(u64, usize) -> Element + 'static,
+) -> Element {
+    let mut e = Element::of(Kind::OUTLINE);
+    e.effects.rows = Some(Rows {
+        count: 0,
+        height: 28.0,
+        layout: RowsLayout::Outline(
+            columns.into(),
+            TreeFns {
+                children: Rc::new(children),
+                expandable: Rc::new(expandable),
+            },
+        ),
+        cell: Rc::new(move |k, c| cell(k, c as usize)),
+    });
+    e
+}
+
+/// A virtualised grid of `count` tiles (icon views) of `tile` points (the kit's tile is
+/// 104 × 104): `item` builds a tile's element when it scrolls into sight; tiles reflow
+/// with the width.
+pub fn collection(
+    count: usize,
+    tile: (f32, f32),
+    item: impl Fn(usize) -> Element + 'static,
+) -> Element {
+    let mut e = Element::of(Kind::GRID_VIEW);
+    e.effects.rows = Some(Rows {
+        count,
+        height: tile.1,
+        layout: RowsLayout::Grid(tile.0, tile.1),
+        cell: Rc::new(move |k, _| item(usize::try_from(k).unwrap_or(usize::MAX))),
     });
     e
 }

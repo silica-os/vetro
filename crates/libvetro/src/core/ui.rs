@@ -521,10 +521,16 @@ impl Ui {
                 PropChange::Layout
             }
             Prop::FrameAlignment => {
-                m.alignment = value
-                    .as_int()
-                    .and_then(Alignment::from_int)
-                    .ok_or(Error::BadValue)?;
+                match value {
+                    Value::None => m.aligns_content = false,
+                    v => {
+                        m.alignment = v
+                            .as_int()
+                            .and_then(Alignment::from_int)
+                            .ok_or(Error::BadValue)?;
+                        m.aligns_content = true;
+                    }
+                }
                 PropChange::Layout
             }
             Prop::LayoutPriority => {
@@ -1021,6 +1027,18 @@ impl Ui {
             None => return,
         };
         self.request_paint_subtree(root);
+        // The focused view draws differently in an inactive window (selections dim).
+        let focus = self.window(window).and_then(|w| w.focus);
+        if let Some(id) = focus {
+            let flags = self.tree.flags(id) & NodeFlags::INTERACTION;
+            if let Some(mut w) = self.tree.take_widget(id) {
+                {
+                    let mut cx = EventCx { ui: self, id };
+                    w.state_changed(&mut cx, flags, flags);
+                }
+                self.tree.put_widget(id, w);
+            }
+        }
     }
 
     // ----- Appearance --------------------------------------------------------------------
@@ -1043,9 +1061,11 @@ impl Ui {
         let mut appearance = self.appearance;
         let mut cur = Some(id);
         let mut found = None;
+        let mut emphasized = false;
         let mut guard = 0;
         while let Some(v) = cur {
             let Some(n) = self.tree.get(v) else { break };
+            emphasized |= n.flags.contains(NodeFlags::EMPHASIZED);
             if let Some(d) = n.dark_override {
                 found = Some(d);
                 break;
@@ -1065,7 +1085,31 @@ impl Ui {
         if let Some(d) = found {
             appearance.dark = d;
         }
-        Theme::new(appearance)
+        // The walk stops at an override: the rest of the chain may still be emphasized.
+        while let Some(v) = cur {
+            let Some(n) = self.tree.get(v) else { break };
+            emphasized |= n.flags.contains(NodeFlags::EMPHASIZED);
+            cur = n.parent;
+            guard += 1;
+            if guard > 10_000 {
+                break;
+            }
+        }
+        let theme = Theme::new(appearance);
+        if emphasized { theme.emphasize() } else { theme }
+    }
+
+    /// Marks a view as drawn on an accent fill (a selected row): its subtree takes the
+    /// emphasized theme ([`Theme::emphasize`]) and is recorded again when this changes.
+    pub fn set_emphasized(&mut self, id: ViewId, emphasized: bool) {
+        let Some(n) = self.tree.get_mut(id) else {
+            return;
+        };
+        if n.flags.contains(NodeFlags::EMPHASIZED) == emphasized {
+            return;
+        }
+        n.flags.set(NodeFlags::EMPHASIZED, emphasized);
+        self.request_paint_subtree(id);
     }
 
     /// Whether the view or an ancestor is disabled.
@@ -1939,14 +1983,22 @@ impl Ui {
             return;
         }
         let origin = parent_origin + n.frame.origin() + n.modifiers.offset;
-        let theme = match n.dark_override {
+        let mut theme = match n.dark_override {
             Some(d) if d != parent_theme.dark() => {
                 let mut a = parent_theme.appearance;
                 a.dark = d;
-                Theme::new(a)
+                let t = Theme::new(a);
+                if parent_theme.emphasized {
+                    t.emphasize()
+                } else {
+                    t
+                }
             }
             _ => parent_theme,
         };
+        if n.flags.contains(NodeFlags::EMPHASIZED) {
+            theme = theme.emphasize();
+        }
         let needs_paint = n.flags.contains(NodeFlags::NEEDS_PAINT);
         if needs_paint {
             self.record_view(id, theme);

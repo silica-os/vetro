@@ -9,7 +9,8 @@ use std::rc::{Rc, Weak};
 use vetro_kit::{Connection, Prop, Signal, View as KitView};
 
 use crate::element::{
-    Effects, Element, Handler, Key, MenuEntry, PValue, Presentation, Rows, What, same_what,
+    Effects, Element, Handler, Key, MenuEntry, PValue, Presentation, Rows, RowsLayout, TreeFns,
+    What, same_what,
 };
 use crate::{Component, Cx, Root, Scheduler, Slots};
 
@@ -40,15 +41,17 @@ impl Drop for Shown {
 type MenuCell = Rc<RefCell<Rc<Vec<MenuEntry>>>>;
 
 /// The state of an element's effects.
-type RowFn = Rc<RefCell<Rc<dyn Fn(usize) -> Element>>>;
+type RowFn = Rc<RefCell<Rc<dyn Fn(u64, u32) -> Element>>>;
 
 /// The live rows of a virtualised list: each row is a tree of its own mounted in a host view
 /// the list owns.
 struct RowsState {
     count: usize,
     height: f32,
+    layout: RowsLayout,
     row: RowFn,
     live: Rc<RefCell<Vec<Rc<RootInner>>>>,
+    tree: Option<Rc<RefCell<TreeFns>>>,
 }
 
 #[derive(Default)]
@@ -254,7 +257,8 @@ fn apply_effects(view: &KitView, state: &mut EffectState, want: &Effects, sched:
     present(view, &mut state.popover, want.popover.as_ref(), false);
 }
 
-/// Sets a list's rows (when their number or height changed) or renders the live rows again.
+/// Sets a collection's items (when their number, height or layout changed) or renders the
+/// live items again.
 fn apply_rows(
     view: &KitView,
     state: &mut Option<RowsState>,
@@ -268,12 +272,22 @@ fn apply_rows(
     if let Some(st) = state.as_mut()
         && st.count == want.count
         && st.height == want.height
+        && st.layout.same(&want.layout)
     {
-        *st.row.borrow_mut() = want.row.clone();
+        *st.row.borrow_mut() = want.cell.clone();
+        if let RowsLayout::Outline(_, fns) = &want.layout {
+            // The tree may have changed: it is read again (expanded nodes and the selection
+            // are kept), and the rows are made again.
+            if let Some(t) = &st.tree {
+                *t.borrow_mut() = fns.clone();
+            }
+            let _ = view.reload();
+            return;
+        }
         let Some(s) = sched.upgrade() else {
             return;
         };
-        // Rows the list dropped have no parent any more.
+        // Items the collection dropped have no parent any more.
         let live: Vec<Rc<RootInner>> = {
             let mut l = st.live.borrow_mut();
             l.retain(|r| r.host.parent().is_some());
@@ -284,36 +298,111 @@ fn apply_rows(
         }
         return;
     }
-    let row: RowFn = Rc::new(RefCell::new(want.row.clone()));
+    let row: RowFn = Rc::new(RefCell::new(want.cell.clone()));
     let live: Rc<RefCell<Vec<Rc<RootInner>>>> = Rc::default();
-    let (row2, live2, sched2) = (row.clone(), Rc::downgrade(&live), sched.clone());
-    let set = view.set_rows(want.count, want.height, move |i| {
-        let host = KitView::new(vetro_kit::Kind::VIEW).ok()?;
-        let r = row2.clone();
-        let root = Rc::new(RootInner::new(
-            host.clone(),
-            Rc::new(move || {
-                let f = r.borrow().clone();
-                f(i).fill()
-            }),
-        ));
-        if let Some(s) = sched2.upgrade() {
-            root.render(&s);
+    let make = {
+        let (row2, live2, sched2) = (row.clone(), Rc::downgrade(&live), sched.clone());
+        move |key: u64, column: u32| -> Option<KitView> {
+            let host = KitView::new(vetro_kit::Kind::VIEW).ok()?;
+            let r = row2.clone();
+            let root = Rc::new(RootInner::new(
+                host.clone(),
+                Rc::new(move || {
+                    let f = r.borrow().clone();
+                    f(key, column).fill()
+                }),
+            ));
+            if let Some(s) = sched2.upgrade() {
+                root.render(&s);
+            }
+            if let Some(l) = live2.upgrade() {
+                let mut l = l.borrow_mut();
+                l.retain(|r| r.host.parent().is_some());
+                l.push(root);
+            }
+            Some(host)
         }
-        if let Some(l) = live2.upgrade() {
-            let mut l = l.borrow_mut();
-            l.retain(|r| r.host.parent().is_some());
-            l.push(root);
+    };
+    let set_columns = |cols: &[vetro_kit::Column]| -> vetro_kit::Result<()> {
+        view.clear_columns()?;
+        for c in cols {
+            view.add_column(c)?;
         }
-        Some(host)
-    });
+        Ok(())
+    };
+    let mut tree = None;
+    let set = match &want.layout {
+        RowsLayout::List => view.set_rows(want.count, want.height, move |i| make(i as u64, 0)),
+        RowsLayout::Table(cols) => {
+            set_columns(cols).and_then(|()| view.set_cells(want.count, want.height, make))
+        }
+        RowsLayout::Outline(cols, fns) => {
+            let shared = Rc::new(RefCell::new(fns.clone()));
+            tree = Some(shared.clone());
+            set_columns(cols).and_then(|()| {
+                view.set_tree(
+                    want.height,
+                    TreeAdapter {
+                        fns: shared,
+                        cache: None,
+                        make: Box::new(make),
+                    },
+                )
+            })
+        }
+        RowsLayout::Grid(w, h) => view.set_items(want.count, (*w, *h), move |i| make(i as u64, 0)),
+    };
     if set.is_ok() {
         *state = Some(RowsState {
             count: want.count,
             height: want.height,
+            layout: want.layout.clone(),
             row,
             live,
+            tree,
         });
+    }
+}
+
+/// An outline's tree over the element's functions (the last parent's children are kept,
+/// as the outline asks for them one by one).
+struct TreeAdapter {
+    fns: Rc<RefCell<TreeFns>>,
+    cache: Option<(Option<u64>, Vec<u64>)>,
+    make: Box<dyn Fn(u64, u32) -> Option<KitView>>,
+}
+
+impl TreeAdapter {
+    fn children(&mut self, parent: Option<u64>) -> &[u64] {
+        if self.cache.as_ref().is_none_or(|(p, _)| *p != parent) {
+            let f = self.fns.borrow().children.clone();
+            self.cache = Some((parent, f(parent)));
+        }
+        self.cache.as_ref().map_or(&[], |(_, c)| c.as_slice())
+    }
+}
+
+impl vetro_kit::Tree for TreeAdapter {
+    fn child_count(&mut self, parent: Option<u64>) -> u64 {
+        // A new pass over the tree starts at the roots: read them afresh.
+        if parent.is_none() {
+            self.cache = None;
+        }
+        self.children(parent).len() as u64
+    }
+
+    fn child(&mut self, parent: Option<u64>, index: u64) -> u64 {
+        let i = usize::try_from(index).unwrap_or(usize::MAX);
+        self.children(parent).get(i).copied().unwrap_or(u64::MAX)
+    }
+
+    fn is_expandable(&mut self, node: u64) -> bool {
+        let f = self.fns.borrow().expandable.clone();
+        f(node)
+    }
+
+    fn cell(&mut self, node: u64, column: u32) -> Option<KitView> {
+        (self.make)(node, column)
     }
 }
 

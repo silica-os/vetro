@@ -453,7 +453,15 @@ impl EventCx<'_> {
         self.ui.request(r);
     }
 
-    /// The window.
+    /// The window is the key window.
+    pub fn window_active(&self) -> bool {
+        self.ui
+            .window_of(self.id)
+            .and_then(|w| self.ui.window(w))
+            .is_none_or(|w| w.active)
+    }
+
+    /// The window the view is shown in.
     pub fn window(&self) -> Option<WindowId> {
         self.ui.window_of(self.id)
     }

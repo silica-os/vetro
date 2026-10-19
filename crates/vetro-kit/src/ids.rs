@@ -95,6 +95,13 @@ impl Prop {
     pub const FONT_WEIGHT: Prop = Prop(sys::VETRO_PROP_FONT_WEIGHT);
     pub const ANIMATION: Prop = Prop(sys::VETRO_PROP_ANIMATION);
     pub const TRANSITION: Prop = Prop(sys::VETRO_PROP_TRANSITION);
+    pub const SORT_DESCRIPTOR: Prop = Prop(sys::VETRO_PROP_SORT_DESCRIPTOR);
+    pub const COLUMN_WIDTHS: Prop = Prop(sys::VETRO_PROP_COLUMN_WIDTHS);
+    pub const ALTERNATING_ROWS: Prop = Prop(sys::VETRO_PROP_ALTERNATING_ROWS);
+    pub const HEADER_VISIBLE: Prop = Prop(sys::VETRO_PROP_HEADER_VISIBLE);
+    pub const ALLOWS_MULTIPLE_SELECTION: Prop = Prop(sys::VETRO_PROP_ALLOWS_MULTIPLE_SELECTION);
+    pub const EXPANDED_ITEMS: Prop = Prop(sys::VETRO_PROP_EXPANDED_ITEMS);
+    pub const TILE_SIZE: Prop = Prop(sys::VETRO_PROP_TILE_SIZE);
 }
 
 /// A signal id.
@@ -125,6 +132,9 @@ impl Signal {
     pub const KEY_UNHANDLED: Signal = Signal(sys::VETRO_SIGNAL_KEY_UNHANDLED);
     pub const DRAG_BEGAN: Signal = Signal(sys::VETRO_SIGNAL_DRAG_BEGAN);
     pub const DRAW: Signal = Signal(sys::VETRO_SIGNAL_DRAW);
+    pub const SORT_CHANGED: Signal = Signal(sys::VETRO_SIGNAL_SORT_CHANGED);
+    pub const CELL_EDITED: Signal = Signal(sys::VETRO_SIGNAL_CELL_EDITED);
+    pub const COLUMN_RESIZED: Signal = Signal(sys::VETRO_SIGNAL_COLUMN_RESIZED);
 }
 
 /// A view kind.
@@ -183,4 +193,7 @@ impl Kind {
     pub const TAB: Kind = Kind(sys::VETRO_KIND_TAB);
     pub const STATUS_BAR: Kind = Kind(sys::VETRO_KIND_STATUS_BAR);
     pub const TEXT: Kind = Kind(sys::VETRO_KIND_TEXT);
+    pub const TABLE: Kind = Kind(sys::VETRO_KIND_TABLE);
+    pub const OUTLINE: Kind = Kind(sys::VETRO_KIND_OUTLINE);
+    pub const GRID_VIEW: Kind = Kind(sys::VETRO_KIND_GRID_VIEW);
 }

@@ -405,6 +405,7 @@ impl Ui {
         if !changed && !needs {
             return;
         }
+        self.align_content(id);
         let content = self.content_box(id);
         if let Some(mut w) = self.tree.take_widget(id) {
             {
@@ -431,13 +432,53 @@ impl Ui {
         }
     }
 
-    /// The content box of `id` in its own coordinates: inside the padding, the content's
-    /// natural size aligned in the frame when the frame is larger.
+    /// The content box of `id` in its own coordinates: inside the padding, or, when the
+    /// view has a frame alignment, the content's own size aligned in it.
     pub fn content_box(&self, id: ViewId) -> Rect {
         let Some(n) = self.tree.get(id) else {
             return Rect::ZERO;
         };
-        Rect::from_size(n.frame.size()).inset(n.modifiers.padding)
+        match n.content {
+            Some(r) if n.modifiers.aligns_content => r,
+            _ => Rect::from_size(n.frame.size()).inset(n.modifiers.padding),
+        }
+    }
+
+    /// Lays an aligned view's content out at its own size in its frame.
+    fn align_content(&mut self, id: ViewId) {
+        let Some(n) = self.tree.get(id) else { return };
+        if !n.modifiers.aligns_content {
+            return;
+        }
+        let inner = Rect::from_size(n.frame.size()).inset(n.modifiers.padding);
+        let alignment = n.modifiers.alignment;
+        let natural = match self.tree.take_widget(id) {
+            Some(mut w) => {
+                let s = {
+                    let mut cx = LayoutCx {
+                        ui: self,
+                        id,
+                        axis: None,
+                    };
+                    w.measure(&mut cx, Proposal::fixed(inner.size()))
+                };
+                self.tree.put_widget(id, w);
+                s
+            }
+            None => inner.size(),
+        };
+        let size = Size::new(
+            natural.width.min(inner.width).max(0.0),
+            natural.height.min(inner.height).max(0.0),
+        );
+        let o = alignment.place(inner, size);
+        let r = Rect::new(o.x.round(), o.y.round(), size.width, size.height);
+        if let Some(n) = self.tree.get_mut(id) {
+            if n.content != Some(r) {
+                n.flags.insert(NodeFlags::NEEDS_PAINT);
+            }
+            n.content = Some(r);
+        }
     }
 
     pub(crate) fn content_origin(&self, id: ViewId) -> Point {
