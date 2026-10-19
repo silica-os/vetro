@@ -273,6 +273,25 @@ fn bounds_of(l: &KitLayer, origin: Point, root: bool, depth: usize) -> Option<Re
     Some(children.map_or(own, |c| own.union(c)))
 }
 
+/// Fills the children of symbol instances of other masters (not the Icon Kit's glyphs) with
+/// the nested master's layers, unscaled, so their layers can be compared by path
+/// (`Checkbox box/Box`).
+fn expand_nested(l: &mut KitLayer, depth: usize) {
+    if depth > 8 {
+        return;
+    }
+    for c in &mut l.children {
+        if let Some(m) = c.master.as_deref()
+            && c.library.is_none()
+            && c.children.is_empty()
+            && let Ok(nested) = KitMaster::load(m)
+        {
+            c.children = nested.root.children;
+        }
+        expand_nested(c, depth + 1);
+    }
+}
+
 /// Sketch's weight scale to CSS.
 pub fn css_weight(sketch: u64) -> u16 {
     match sketch {
@@ -332,9 +351,11 @@ impl KitMaster {
         let text = std::fs::read_to_string(&path)
             .map_err(|e| format!("{}: {e} (run cargo xtask sync-kit)", path.display()))?;
         let v: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let mut root = layer(&v, true);
+        expand_nested(&mut root, 0);
         Ok(KitMaster {
             name: name.to_string(),
-            root: layer(&v, true),
+            root,
             png: kit_dir().join(format!("{name}@2x.png")),
         })
     }

@@ -76,6 +76,11 @@ pub fn type_style(name: &str) -> Option<TypeStyle> {
     typography::ALL.iter().find(|t| t.name == name).copied()
 }
 
+/// The type token by name, borrowed.
+pub fn type_style_ref(name: &str) -> Option<&'static TypeStyle> {
+    typography::ALL.iter().find(|t| t.name == name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

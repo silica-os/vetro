@@ -2,5 +2,8 @@
 
 pub mod button;
 pub mod foundation;
+pub mod switch;
+pub mod text;
 pub mod theme;
+pub mod toggles;
 pub mod tokens;

@@ -94,8 +94,13 @@ pub fn whole(v: f32, step: f32) -> f32 {
 /// The focus halo: a ring of `focus.halo` (3 pt) in `Line/Focus` outside the control's
 /// shape, the kit's `Focus Halo` layer.
 pub fn focus_halo(rec: &mut Recorder, rect: Rect, shape: Shape, theme: &Theme) {
+    focus_halo_named(rec, "Focus Halo", rect, shape, theme);
+}
+
+/// [`focus_halo`] under another layer name (`Checkbox box/Focus Halo`).
+pub fn focus_halo_named(rec: &mut Recorder, name: &str, rect: Rect, shape: Shape, theme: &Theme) {
     rec.layer(
-        "Focus Halo",
+        name,
         rect,
         shape,
         Style::default().with_border(Border::at(

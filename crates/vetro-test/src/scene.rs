@@ -62,6 +62,11 @@ pub struct Scene {
     pub view: Option<ViewId>,
     /// Where the master's origin is in the window (the PNG covers the render bounds).
     pub origin: Point,
+    /// Regions (master coordinates) left out of the pixel comparison, with the reason in the
+    /// test (a kit defect, an override the export does not carry).
+    pub extra_mask: Vec<Rect>,
+    /// The kit PNG has an empty margin right and below (compare the top left corner).
+    pub png_margin: bool,
 }
 
 impl Scene {
@@ -83,6 +88,8 @@ impl Scene {
             master: master.clone(),
             view: None,
             origin,
+            extra_mask: Vec::new(),
+            png_margin: false,
         }
     }
 
@@ -265,18 +272,45 @@ impl Scene {
     /// The kit layers to compare by default: every visible child of the master's root,
     /// mapped to our layer of the same name (`<name> tint` layers merge into their glass).
     pub fn default_mapping(&self) -> Vec<(String, String)> {
-        self.master
-            .root
-            .children
-            .iter()
-            .filter(|c| !c.hidden && !c.name.ends_with(" tint"))
-            .map(|c| (c.name.clone(), c.name.clone()))
-            .collect()
+        fn walk(l: &KitLayer, prefix: &str, out: &mut Vec<(String, String)>) {
+            for c in &l.children {
+                if c.hidden || c.name.ends_with(" tint") {
+                    continue;
+                }
+                let path = if prefix.is_empty() {
+                    c.name.clone()
+                } else {
+                    format!("{prefix}/{}", c.name)
+                };
+                if c.master.is_some() && !c.children.is_empty() {
+                    // A nested master: its layers, under the instance's name.
+                    walk(c, &path, out);
+                } else {
+                    out.push((path.clone(), path));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(&self.master.root, "", &mut out);
+        out
     }
 
     /// Geometry with the default mapping.
     pub fn auto_geometry(&mut self, deviations: &[&str]) -> Vec<String> {
-        let mapping = self.default_mapping();
+        self.auto_geometry_except(&[], deviations)
+    }
+
+    /// Geometry with the default mapping, leaving out the layers whose path ends with one of
+    /// `skip` on both sides. Symbol instances in the kit export only their master's default
+    /// content, not the instance's overrides (the text of a row in a group): such layers are
+    /// not comparable.
+    pub fn auto_geometry_except(&mut self, skip: &[&str], deviations: &[&str]) -> Vec<String> {
+        let skipped = |p: &str| skip.iter().any(|s| p.ends_with(s));
+        let mapping: Vec<(String, String)> = self
+            .default_mapping()
+            .into_iter()
+            .filter(|(a, _)| !skipped(a))
+            .collect();
         let pairs: Vec<(&str, &str)> = mapping
             .iter()
             .map(|(a, b)| (a.as_str(), b.as_str()))
@@ -285,7 +319,7 @@ impl Scene {
         // Our layers the kit does not have.
         let ours = self.layers();
         for l in &ours {
-            if !l.path.contains('/') && !mapping.iter().any(|(_, b)| *b == l.path) {
+            if !skipped(&l.path) && !mapping.iter().any(|(_, b)| *b == l.path) {
                 report.push(format!("{}: drawn but not in the kit", l.path));
             }
         }
@@ -313,36 +347,54 @@ impl Scene {
         let bytes = std::fs::read(&self.master.png)
             .map_err(|e| format!("{}: {e}", self.master.png.display()))?;
         let kit = Image::from_encoded(Data::new_copy(&bytes)).ok_or("cannot decode the PNG")?;
-        let (w, h) = (kit.width(), kit.height());
-        if (ours.width(), ours.height()) != (w, h) {
-            return Err(format!(
-                "size {}x{}, kit {w}x{h}",
-                ours.width(),
-                ours.height()
-            ));
+        let (kw, kh) = (kit.width(), kit.height());
+        let (w, h) = (ours.width(), ours.height());
+        // A kit PNG may be taller or wider than what the master paints (an empty margin the
+        // export adds): `png_margin` accepts it and compares the top left corner.
+        let padded = self.png_margin && kw >= w && kh >= h;
+        if (kw, kh) != (w, h) && !padded {
+            return Err(format!("size {w}x{h}, kit {kw}x{kh}"));
         }
-        let a = rgba(&kit).ok_or("cannot read the PNG's pixels")?;
+        let mut a = rgba(&kit).ok_or("cannot read the PNG's pixels")?;
+        if padded && (kw, kh) != (w, h) {
+            let mut cropped = Vec::with_capacity((w * h * 4) as usize);
+            for y in 0..h as usize {
+                let start = y * kw as usize * 4;
+                if let Some(row) = a.get(start..start + w as usize * 4) {
+                    cropped.extend_from_slice(row);
+                }
+            }
+            a = cropped;
+        }
         let b = rgba(&ours).ok_or("cannot read our pixels")?;
         let mut mask = vec![false; (w * h) as usize];
+        let add_mask = |r: Rect, mask: &mut Vec<bool>| {
+            for y in (r.y * 2.0) as i32..(r.bottom() * 2.0) as i32 {
+                for x in (r.x * 2.0) as i32..(r.right() * 2.0) as i32 {
+                    if x >= 0
+                        && y >= 0
+                        && x < w
+                        && y < h
+                        && let Some(m) = mask.get_mut((y * w + x) as usize)
+                    {
+                        *m = true;
+                    }
+                }
+            }
+        };
         if tol.mask_text {
             let master = self.master.clone();
             for (_, r, l) in master.flatten() {
                 if l.kind == "Text" {
-                    let r = r.translate(self.origin).round_out(1.0).inflate(1.0, 1.0);
-                    for y in (r.y * 2.0) as i32..(r.bottom() * 2.0) as i32 {
-                        for x in (r.x * 2.0) as i32..(r.right() * 2.0) as i32 {
-                            if x >= 0
-                                && y >= 0
-                                && x < w
-                                && y < h
-                                && let Some(m) = mask.get_mut((y * w + x) as usize)
-                            {
-                                *m = true;
-                            }
-                        }
-                    }
+                    add_mask(
+                        r.translate(self.origin).round_out(1.0).inflate(1.0, 1.0),
+                        &mut mask,
+                    );
                 }
             }
+        }
+        for r in &self.extra_mask {
+            add_mask(r.translate(self.origin), &mut mask);
         }
         let mut sum = 0u64;
         let mut count = 0u64;
