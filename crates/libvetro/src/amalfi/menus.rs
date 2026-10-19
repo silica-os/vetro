@@ -178,7 +178,8 @@ impl MenuItem {
                 let mut w = 2.0 * metrics::ITEM_PADDING
                     + lead
                     + metrics::GAP
-                    + self.label_text.width(&self.label, &body);
+                    // Whole points: the label is laid out again in the width it gets.
+                    + self.label_text.width(&self.label, &body).ceil();
                 if let Some(s) = self.shortcut.clone() {
                     w += metrics::GAP + self.shortcut_text.width(&s, &body).ceil();
                 }

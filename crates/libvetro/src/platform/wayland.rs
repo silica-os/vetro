@@ -870,17 +870,24 @@ impl Platform {
                 w.commit();
                 Role::Toplevel(w)
             }
-            WindowKind::Popup { parent, anchor, .. } => {
+            WindowKind::Popup {
+                parent,
+                anchor,
+                grab,
+            } => {
                 let Some(xdg) = &self.xdg else {
                     return;
                 };
-                let Some(parent_xdg) = self.surface(*parent).and_then(|s| match &s.role {
-                    Role::Toplevel(w) => Some(w.xdg_surface().clone()),
-                    Role::Popup(p) => Some(p.xdg_surface().clone()),
-                    _ => None,
-                }) else {
-                    tracing::warn!("popup without an xdg parent");
-                    return;
+                // The parent: an xdg surface, or a layer surface (a shell's menu bar) whose
+                // popup has no xdg parent and is attached with `get_popup`.
+                let (parent_xdg, parent_layer) = match self.surface(*parent).map(|s| &s.role) {
+                    Some(Role::Toplevel(w)) => (Some(w.xdg_surface().clone()), None),
+                    Some(Role::Popup(p)) => (Some(p.xdg_surface().clone()), None),
+                    Some(Role::Layer(l)) => (None, Some(l.clone())),
+                    _ => {
+                        tracing::warn!("popup without a parent surface");
+                        return;
+                    }
                 };
                 let Ok(pos) = XdgPositioner::new(xdg) else {
                     return;
@@ -899,8 +906,16 @@ impl Platform {
                         | xdg_positioner::ConstraintAdjustment::SlideX
                         | xdg_positioner::ConstraintAdjustment::SlideY,
                 );
-                match Popup::from_surface(Some(&parent_xdg), &pos, &self.qh, wl, xdg) {
+                match Popup::from_surface(parent_xdg.as_ref(), &pos, &self.qh, wl, xdg) {
                     Ok(p) => {
+                        if let Some(l) = &parent_layer {
+                            l.get_popup(p.xdg_popup());
+                        }
+                        // A grabbing popup closes on a click outside (the press that
+                        // opened it gives the serial).
+                        if *grab && let Some(seat) = &self.seat {
+                            p.xdg_popup().grab(seat, self.pointer_serial);
+                        }
                         p.wl_surface().commit();
                         Role::Popup(p)
                     }
