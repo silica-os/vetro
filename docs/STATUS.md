@@ -207,8 +207,8 @@ also has `ignore_aspects` (a kit defect on every layer, e.g. the dark glass blur
 `skip_trees` (nested components replaced by placeholders); kit-driven builders shared by the
 tests live in `tests/common/mod.rs`. Open problems: app icons (Item/App, Pop-up/App, alert
 icons), the `Open` masters of buttons, the menu bar family, Windows with
-the real nested components. Window buttons are at the 23 pt pitch (windows.md; the kit's
-bars and pieces still render them at 24 pt, masked there); alerts follow the binding
+the real nested components. Window buttons are at the 23 pt pitch (windows.md and every kit
+render since silica-design fb5f9f10, compared unmasked); alerts follow the binding
 anatomy of components.md (280 wide, centred text, buttons one per row 240 × 28, default
 first, Escape last).
 
@@ -260,8 +260,7 @@ first, Escape last).
 2. Performance: a real Skia persistent shader cache needs a skia-safe binding.
 3. Collections: type-select, column reordering, drag and drop of rows, rubber-band
    selection in grids.
-4. Open kit problems: app icons (bitmaps in the kit), `Open` button masters, menu bar family,
-   the 24 pt window buttons in the kit's bar and piece renders.
+4. Open kit problems: app icons (bitmaps in the kit), `Open` button masters, menu bar family.
 5. `vetro-terminal` (port `crates/embedder/src/termgrid.rs` + `pty.rs`) with the apps phase.
 6. Keep Vetro free of distribution-specific assumptions (Silica OS moves to a
    BuildStream/freedesktop-sdk image): fonts are bundled, fontconfig and the services are

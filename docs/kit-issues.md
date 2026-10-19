@@ -62,8 +62,13 @@ test that names it, until the kit is fixed.
   compared.
 - `Piece/Search Token`: the nested token master keeps its own label box (28 pt high).
 - `Segmented Text/Inactive`: the labels stay primary in the kit while the icon segments dim.
-- The window buttons' pitch in the kit is 24 pt (8 pt gap) and the bars place them 16 or 20 pt in;
-  `windowControls` in the tokens (centre 26, pitch 23) is the measured placement of the shell.
+- Window buttons: the kit (silica-design fb5f9f10) renders every master that holds them at the
+  23 pt pitch (62 pt group), as windows.md measures; the parity tests compare them unmasked.
+  Their place in a bar is Vetro's, from the bar height (windows.md `button_centers`: first
+  centre 16 up to 32 pt, 26 from 52 pt), not the kit instance's 16 or 20 pt inset.
+  `Piece/Controls` is the unified bars' leading region (20 + 62 + 12, 94 wide).
+- `Title Bar/Document`: the title block centres between the controls and a trailing 64 pt
+  reservation (the kit's), not symmetrically to the 62 pt controls.
 - The 16 pt dot masters are compared with a loose mean (edge pixels dominate); their inside
   matches exactly.
 
